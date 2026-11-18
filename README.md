@@ -29,3 +29,7 @@ Search uses a direct browser request with a server fallback to Apple's public iT
 - Account persistence requires a signed-in browser to verify end to end
 
 No external OAuth client secrets are included in this repository.
+
+## GitHub Pages
+
+`npm run build:pages` builds the browsing interface into `docs/`, served at `/sleeve/`. Song search and the rating preview run in the browser. Sign-in and saving continue on the separately hosted Sleeve account site because GitHub Pages cannot execute API routes or D1. The GitHub version does not pretend to be signed in or store ratings in browser storage.
