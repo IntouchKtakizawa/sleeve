@@ -3,13 +3,15 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Disc3, Download, Heart, Library, Minus, Moon, Plus, Search,
   Shuffle, Star, Sun, Trash2, Upload, X } from 'lucide-react';
-import { albumFor, discoveryTracks, genres, loadSpotifyLink, chartAlbums, searchApple, shuffled, spotifySearch, type Kind, type Song } from '../lib/catalogue';
+import { albumFor, chartAlbums, discoveryPool, discoveryTracks, drawDiscovery, genres, loadSpotifyLink, searchApple, spotifySearch, type Kind, type Song } from '../lib/catalogue';
 import { backup, csv, mergeRatings, parseBackup, songKey, STORAGE_KEY, type Rating } from '../lib/local-library';
 
 const themeKey = 'sleeve.theme';
 const views = ['discover', 'random', 'collection'] as const;
 type View = typeof views[number];
 type Filter = 'all' | Kind;
+type DiscoveryRounds = Record<string, ReturnType<typeof drawDiscovery>>;
+const featured = discoveryTracks.find(song => song.artist === 'Daft Punk' && song.title === 'One More Time') || discoveryTracks[0];
 
 function readCollection() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -37,17 +39,6 @@ function KindSwitch({ value, onChange, includeAll = false }: {
     {choices.map(([key, label]) => <button key={key} type="button" aria-pressed={value === key}
       onClick={() => onChange(key)}>{label}</button>)}
   </div>;
-}
-
-function pickBrowseSongs(kind: Kind, group: string, songs: Song[]) {
-  if (group !== genres[0]) songs = songs.filter(song => song.group === group);
-  else {
-    const groups = [...new Set(songs.map(song => song.group))];
-    songs = groups.flatMap(item => songs.find(song => song.group === item) || []);
-  }
-  if (kind === 'track') return songs;
-  const albums = songs.flatMap(song => albumFor(song) || []);
-  return [...new Map(albums.map(album => [songKey(album), album])).values()];
 }
 
 function formatDuration(milliseconds: number) {
@@ -98,11 +89,10 @@ export default function Sleeve() {
   const [score, setScore] = useState(7.5);
   const [note, setNote] = useState('');
   const [favourite, setFavourite] = useState(false);
-  const [browse, setBrowse] = useState(discoveryTracks);
+  const [browseRounds, setBrowseRounds] = useState<DiscoveryRounds>({});
   const [genre, setGenre] = useState(genres[0]);
   const [randomGenre, setRandomGenre] = useState(genres[0]);
-  const [randomSong, setRandomSong] = useState<Song | null>(null);
-  const randomDeck = useRef<Song[]>([]);
+  const [randomRounds, setRandomRounds] = useState<DiscoveryRounds>({});
   const [kind, setKind] = useState<Kind>('track');
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState({ term: '', revision: 0 });
@@ -110,6 +100,8 @@ export default function Sleeve() {
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [chart, setChart] = useState<Song[]>([]);
+  const [spotlightAlbums, setSpotlightAlbums] = useState<Song[]>([]);
+  const browseKey = kind + ':' + genre;
   const spotifyLink = /^https?:\/\/open\.spotify\.com(?:\/|$)/i.test(query.trim());
   const [spotifyLoading, setSpotifyLoading] = useState(false);
   const [spotifyError, setSpotifyError] = useState('');
@@ -139,10 +131,11 @@ export default function Sleeve() {
     window.addEventListener('storage', onStorage);
     window.addEventListener('hashchange', onHash);
     try { setDark(localStorage.getItem(themeKey) !== 'light'); } catch {}
-    const mix = shuffled(discoveryTracks);
-    setBrowse(mix);
-    setRandomSong(mix[0]);
-    randomDeck.current = mix.slice(1);
+    setRandomRounds(previous => previous[genres[0]] ? previous : {
+      [genres[0]]: drawDiscovery(discoveryTracks, undefined, 1),
+    });
+    setSpotlightAlbums(genres.slice(1).flatMap(group =>
+      drawDiscovery(discoveryPool('album', group), undefined, 1).items).slice(0, 6));
     setReady(true);
     return () => {
       window.removeEventListener('storage', onStorage);
@@ -197,10 +190,15 @@ export default function Sleeve() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    setBrowseRounds(previous => previous[browseKey] ? previous : {
+      ...previous, [browseKey]: drawDiscovery(discoveryPool(kind, genre), undefined, 7),
+    });
+  }, [browseKey, genre, kind]);
+
   function navigate(next: View) {
     if (view === next) return;
     spotifyRequest.current?.abort();
-    if (next === 'discover') setBrowse(shuffled(discoveryTracks));
     setView(next);
     window.location.hash = next;
     window.scrollTo(0, 0);
@@ -238,15 +236,17 @@ export default function Sleeve() {
     }
   }
 
+  function shufflePicks() {
+    setBrowseRounds(previous => ({
+      ...previous, [browseKey]: drawDiscovery(discoveryPool(kind, genre), previous[browseKey], 7),
+    }));
+  }
+
   function roll(group = randomGenre) {
-    if (!randomDeck.current.length || group !== randomGenre) {
-      const matches = discoveryTracks.filter(song => group === genres[0] || song.group === group);
-      const next = shuffled(matches);
-      if (next.length > 1 && next[0].id === randomSong?.id) next.push(next.shift()!);
-      randomDeck.current = next;
-    }
-    const next = randomDeck.current.shift();
-    if (next) setRandomSong(next);
+    setRandomRounds(previous => ({
+      ...previous,
+      [group]: drawDiscovery(discoveryPool('track', group), previous[group], 1, previous[randomGenre]?.items),
+    }));
     setRandomGenre(group);
   }
 
@@ -321,9 +321,9 @@ export default function Sleeve() {
     }
   }
 
-  const featured = discoveryTracks.find(song => song.artist === 'Daft Punk' && song.title === 'One More Time') || browse[0];
-  const albumShelf = chart.length ? chart : pickBrowseSongs('album', genres[0], browse).slice(0, 6);
-  const displayed = search.term ? results : pickBrowseSongs(kind, genre, browse);
+  const albumShelf = chart.length ? chart : spotlightAlbums;
+  const displayed = search.term ? results : browseRounds[browseKey]?.items ?? [];
+  const randomSong = randomRounds[randomGenre]?.items[0];
   const collection = ratings.filter(rating =>
     (collectionFilter === 'all' || (rating.song.kind || 'track') === collectionFilter) &&
     (!onlyFavourites || rating.favourite) &&
@@ -362,9 +362,15 @@ export default function Sleeve() {
             <button className="primary" onClick={() => searchRef.current?.focus()}>Start rating <ArrowRight size={18}/></button>
           </div>
           {featured && <article className="hero-record">
-            <div className="record-image">
+            <button type="button" className="record-disc" onClick={() => openRating(featured)}
+              aria-label={'Rate ' + featured.title + ' by ' + featured.artist}>
               <Artwork song={featured} eager />
-              <div className="quick-score" aria-label="Quick rating">
+            </button>
+            <div className="record-info">
+              <button className="record-label" onClick={() => openRating(featured)}>
+                <span><b>{featured.title}</b><small>{featured.artist}</small></span><ArrowUpRight size={20}/>
+              </button>
+              <div className="quick-score" role="group" aria-label="Quick rating">
                 {[2, 4, 6, 8, 10].map(value => <button key={value} type="button"
                   aria-label={`Rate ${featured.title} ${value} out of 10`}
                   onClick={() => { openRating(featured); setScore(value); }}>
@@ -372,9 +378,6 @@ export default function Sleeve() {
                 </button>)}
               </div>
             </div>
-            <button className="record-label" onClick={() => openRating(featured)}>
-              <span><b>{featured.title}</b><small>{featured.artist}</small></span><ArrowUpRight size={20}/>
-            </button>
           </article>}
         </section>}
 
@@ -414,7 +417,7 @@ export default function Sleeve() {
         <section className="results" aria-labelledby="discovery-results">
           <div className="section-heading">
             <h2 id="discovery-results">{searching ? 'Results for “' + search.term + '”' : kind === 'album' ? 'Albums to explore' : 'In rotation'}</h2>
-            {!searching && <button className="secondary" onClick={() => setBrowse(shuffled(discoveryTracks))}><Shuffle size={16}/> Shuffle picks</button>}
+            {!searching && <button className="secondary" onClick={shufflePicks}><Shuffle size={16}/> Shuffle picks</button>}
           </div>
           {!searching && <div className="genre-list" aria-label="Filter featured music by genre">
             {genres.map(item => <button key={item} aria-pressed={genre === item} onClick={() => setGenre(item)}>{item}</button>)}

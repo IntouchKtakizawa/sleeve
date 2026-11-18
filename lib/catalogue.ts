@@ -23,6 +23,54 @@ export function shuffled<T>(items: T[]): T[] {
   return result;
 }
 
+type DiscoveryRound = { items: Song[]; seen: Set<string> };
+
+export function discoveryPool(kind: Kind, group: string): Song[] {
+  const tracks = group === genres[0] ? discoveryTracks :
+    discoveryTracks.filter(song => (song.group || song.genre) === group);
+  if (kind === 'track') return tracks;
+  const albums = new Map<string, Song>();
+  for (const song of tracks) {
+    const album = albumFor(song);
+    if (!album) continue;
+    const title = album.title.replace(/\s*[([][^)\]]*(?:deluxe|expanded|anniversary|remaster)[^)\]]*[)\]]\s*$/i, '');
+    const key = album.artist.toLowerCase() + ':' + title.toLowerCase().trim();
+    if (!albums.has(key)) albums.set(key, album);
+  }
+  return [...new Map([...albums.values()].map(album => [songKey(album), album])).values()];
+}
+
+export function drawDiscovery(pool: Song[], round: DiscoveryRound | undefined,
+  count: number, lastItems = round?.items ?? []): DiscoveryRound {
+  const order = shuffled(pool);
+  const items: Song[] = [];
+  const previous = new Set(lastItems.map(songKey));
+  const picked = new Set<string>();
+  let seen = new Set(round?.seen);
+  const size = Math.min(count, pool.length);
+
+  function take(candidates: Song[]) {
+    for (const song of candidates) {
+      if (items.length === size) break;
+      const key = songKey(song);
+      if (seen.has(key) || picked.has(key)) continue;
+      items.push(song);
+      seen.add(key);
+      picked.add(key);
+    }
+  }
+
+  take(order.filter(song => !previous.has(songKey(song))));
+  take(order);
+  if (items.length < size) {
+    seen = new Set();
+    take(order.filter(song => !previous.has(songKey(song))));
+    take(order);
+  }
+
+  return { items, seen };
+}
+
 export function spotifySearch(query: string) {
   return 'https://open.spotify.com/search/' + encodeURIComponent(query);
 }
