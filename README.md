@@ -20,11 +20,12 @@ The project uses React, Vinext/Vite, Cloudflare Workers, Drizzle and D1. The hos
 
 Database schema: `db/schema.ts`. Generated migrations: `drizzle/`. Apply migrations locally using the command in the starter's development documentation or the Wrangler D1 CLI after building. Production migrations are applied during Sites deployment.
 
-Search uses Apple's public iTunes Search API (US storefront). Catalogue coverage is not every song ever released. Album artwork links to the corresponding Apple Music page. No streaming API credentials are needed. Saved user notes and ratings live only in the database, never in GitHub. Browser storage is not used as the ratings database.
+Search uses a direct browser request with a server fallback to Apple's public iTunes Search API (US storefront). Catalogue coverage is not every song ever released. Album artwork links to the corresponding Apple Music page. No streaming API credentials are needed. Saved user notes and ratings live only in the database, never in GitHub. Browser storage is not used as the ratings database.
 
 ## Validation
 - TypeScript and production build
-- Browser checks for search, dialog, scoring and signed-out collection
-- API checks for persistence, deletion, and account isolation in the local database
+- Browser checks for layout and signed-out collection
+- Live API check confirms anonymous collection requests receive HTTP 401
+- Account persistence requires a signed-in browser to verify end to end
 
 No external OAuth client secrets are included in this repository.
