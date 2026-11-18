@@ -1,17 +1,101 @@
-export type Song={id:number,title:string,artist:string,album:string,art:string,url:string,genre:string,year:string};
-export type Rating={trackId:number,song:Song,score:number,note:string,updatedAt:string,favourite?:boolean};
-export const STORAGE_KEY='sleeve.library.v1';
-const fail=()=>{throw new Error('This is not a valid Sleeve backup. Your collection has not changed.')};
-export function validateRatings(value:unknown):Rating[]{
- if(!Array.isArray(value)||value.length>10000)return fail();
- return value.map((r:any)=>{
- const s=r?.song;
- if(!s||!Number.isSafeInteger(s.id)||s.id<1||r.trackId!==s.id||typeof s.title!=='string'||!s.title.trim()||typeof s.artist!=='string'||typeof r.score!=='number'||!Number.isFinite(r.score)||r.score<0||r.score>10||typeof r.note!=='string'||r.note.length>1000||typeof r.updatedAt!=='string'||!Number.isFinite(Date.parse(r.updatedAt)))return fail();
- const safe=(u:unknown,domain:RegExp)=>{if(typeof u!=='string')return '';try{const v=new URL(u);return v.protocol==='https:'&&domain.test(v.hostname)?v.href:''}catch{return ''}};
- return {trackId:s.id,song:{id:s.id,title:s.title.slice(0,250),artist:s.artist.slice(0,250),album:String(s.album||'').slice(0,250),art:safe(s.art,/(^|\.)mzstatic\.com$/),url:safe(s.url,/^(music|itunes)\.apple\.com$/),genre:String(s.genre||'').slice(0,80),year:String(s.year||'').slice(0,4)},score:Math.round(r.score*10)/10,note:r.note,updatedAt:new Date(r.updatedAt).toISOString(),favourite:r.favourite===true};
- });
+export type Song = {
+  id: number | string;
+  title: string;
+  artist: string;
+  album: string;
+  art: string;
+  url: string;
+  genre: string;
+  year: string;
+  kind?: 'track' | 'album';
+  source?: 'apple' | 'spotify';
+  albumId?: number;
+  albumUrl?: string;
+  duration?: number;
+  trackCount?: number;
+  group?: string;
+};
+
+export function songKey(song: Song) {
+  return (song.kind || 'track') + ':' + song.id;
 }
-export function parseBackup(raw:string):Rating[]{const d=JSON.parse(raw);if(d?.app!=='sleeve'||d.version!==1)return fail();return mergeRatings([],validateRatings(d.ratings))}
-export function mergeRatings(existing:Rating[],incoming:Rating[]):Rating[]{const map=new Map<number,Rating>();for(const r of [...existing,...incoming]){const old=map.get(r.trackId);if(!old||r.updatedAt>=old.updatedAt)map.set(r.trackId,r)}return [...map.values()]}
-export function backup(ratings:Rating[]){return JSON.stringify({app:'sleeve',version:1,exportedAt:new Date().toISOString(),ratings},null,2)}
-export function csv(ratings:Rating[]){const cell=(v:unknown)=>'"'+String(v??'').replace(/^[=+\-@\t\r]/,"'$&").replaceAll('"','""')+'"';return '\uFEFF'+[['Song','Artist','Album','Score','Favourite','Notes','Rated at'],...ratings.map(r=>[r.song.title,r.song.artist,r.song.album,r.score,r.favourite?'Yes':'No',r.note,r.updatedAt])].map(row=>row.map(cell).join(',')).join('\r\n')}
+
+export type Rating = { trackId: Song['id']; song: Song; score: number; note: string; updatedAt: string; favourite?: boolean };
+export const STORAGE_KEY = 'sleeve.library.v1';
+
+function fail(): never {
+  throw new Error('Choose a valid Sleeve JSON backup. Your collection is safe.');
+}
+
+function safeUrl(value: unknown, domain: RegExp) {
+  if (typeof value !== 'string') return '';
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && domain.test(url.hostname) ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function isAppleId(id: unknown): id is number {
+  return typeof id === 'number' && Number.isSafeInteger(id) && id > 0;
+}
+
+export function validateRatings(value: unknown): Rating[] {
+  if (!Array.isArray(value) || value.length > 10000) return fail();
+  return value.map(rating => {
+    const item = rating?.song;
+    const spotify = item?.source === 'spotify';
+    const validId = spotify ? typeof item.id === 'string' && /^[a-zA-Z0-9]{22}$/.test(item.id) : isAppleId(item?.id);
+    if (!item || !validId || rating.trackId !== item.id || typeof item.title !== 'string' || !item.title.trim() ||
+      typeof item.artist !== 'string' || typeof rating.score !== 'number' || !Number.isFinite(rating.score) ||
+      rating.score < 0 || rating.score > 10 || typeof rating.note !== 'string' || rating.note.length > 1000 ||
+      typeof rating.updatedAt !== 'string' || !Number.isFinite(Date.parse(rating.updatedAt))) return fail();
+
+    const apple = /^(music|itunes)\.apple\.com$/;
+    const song: Song = {
+      id: item.id, title: item.title.slice(0, 250), artist: item.artist.slice(0, 250),
+      album: String(item.album || '').slice(0, 250), genre: String(item.genre || '').slice(0, 80),
+      year: String(item.year || '').slice(0, 4),
+      art: safeUrl(item.art, spotify ? /(^|\.)(scdn\.co|spotifycdn\.com)$/ : /(^|\.)mzstatic\.com$/),
+      url: safeUrl(item.url, spotify ? /^open\.spotify\.com$/ : apple),
+      ...(item.source && { source: spotify ? 'spotify' : 'apple' }),
+      ...(item.kind === 'album' && { kind: 'album' }),
+      ...(isAppleId(item.albumId) && { albumId: item.albumId, albumUrl: safeUrl(item.albumUrl, apple) }),
+      ...(Number.isFinite(item.duration) && { duration: item.duration }),
+      ...(Number.isSafeInteger(item.trackCount) && { trackCount: item.trackCount }),
+    };
+    return {
+      trackId: song.id, song, score: Math.round(rating.score * 10) / 10, note: rating.note,
+      updatedAt: new Date(rating.updatedAt).toISOString(), favourite: rating.favourite === true,
+    };
+  });
+}
+
+export function parseBackup(raw: string): Rating[] {
+  const data = JSON.parse(raw);
+  if (data?.app !== 'sleeve' || data.version !== 1) return fail();
+  return mergeRatings([], validateRatings(data.ratings));
+}
+
+export function mergeRatings(existing: Rating[], incoming: Rating[]): Rating[] {
+  const merged = new Map<string, Rating>();
+  for (const rating of [...existing, ...incoming]) {
+    const key = songKey(rating.song);
+    const old = merged.get(key);
+    if (!old || rating.updatedAt >= old.updatedAt) merged.set(key, rating);
+  }
+  return [...merged.values()];
+}
+
+export function backup(ratings: Rating[]) {
+  return JSON.stringify({ app: 'sleeve', version: 1, exportedAt: new Date().toISOString(), ratings }, null, 2);
+}
+
+export function csv(ratings: Rating[]) {
+  const cell = (value: unknown) => '"' + String(value ?? '').replace(/^[=+\-@\t\r]/, "'$&").replaceAll('"', '""') + '"';
+  const rows = ratings.map(r => [r.song.title, r.song.artist, r.song.album, r.score, r.favourite ? 'Yes' : 'No',
+    r.note, r.updatedAt, r.song.kind === 'album' ? 'Album' : 'Song']);
+  return '\uFEFF' + [['Song', 'Artist', 'Album', 'Score', 'Favourite', 'Notes', 'Rated at', 'Type'], ...rows]
+    .map(row => row.map(cell).join(',')).join('\r\n');
+}

@@ -1,29 +1,516 @@
 'use client';
-import {useEffect,useRef,useState} from 'react';
-import {ArrowUpRight,Search,Disc3,Library,ArrowRight,Plus,X,Check,Headphones,SlidersHorizontal,Trash2,Download,Upload,Heart,Sun,Moon,Minus,ShieldCheck} from 'lucide-react';
-import {STORAGE_KEY,validateRatings,parseBackup,mergeRatings,backup,csv,type Song,type Rating} from '../lib/local-library';
-export default function Sleeve(){
- const [authReady,setAuthReady]=useState(false),[tab,setTab]=useState('discover'),[query,setQuery]=useState(''),[term,setTerm]=useState(''),[songs,setSongs]=useState<Song[]>([]),[ratings,setRatings]=useState<Rating[]>([]),[selected,setSelected]=useState<Song|null>(null),[score,setScore]=useState(7.5),[note,setNote]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[toast,setToast]=useState(''),[sort,setSort]=useState('recent'),[filter,setFilter]=useState('All sounds'),[localQuery,setLocalQuery]=useState(''),[favouritesOnly,setFavouritesOnly]=useState(false),[favourite,setFavourite]=useState(false),[dark,setDark]=useState(false),[storageError,setStorageError]=useState(''),[undo,setUndo]=useState<Rating|null>(null);
- const importRef=useRef<HTMLInputElement>(null);
- const searchRef=useRef<HTMLInputElement>(null); const dialogRef=useRef<HTMLDialogElement>(null);
- function readLocal(){const raw=localStorage.getItem(STORAGE_KEY);return raw?parseBackup(raw):[]}
- function writeLocal(next:Rating[]){try{localStorage.setItem(STORAGE_KEY,backup(next));setRatings(next);setStorageError('');return true}catch{setStorageError('Could not save in this browser. Storage may be full or disabled. Export your collection before closing.');return false}}
- useEffect(()=>{try{setRatings(readLocal());setDark(localStorage.getItem('sleeve.theme')==='dark')}catch{setStorageError('Your saved collection could not be read. Export a backup before changing data.')}setAuthReady(true);function sync(e:StorageEvent){if(e.key===STORAGE_KEY){try{setRatings(readLocal())}catch{setStorageError('Could not read a collection change from another tab.')}}}window.addEventListener('storage',sync);return()=>window.removeEventListener('storage',sync)},[]);
- useEffect(()=>{document.documentElement.dataset.theme=dark?'dark':'light';if(authReady)try{localStorage.setItem('sleeve.theme',dark?'dark':'light')}catch{}},[dark,authReady]);
- function download(format:'json'|'csv'){const blob=new Blob([format==='json'?backup(ratings):csv(ratings)],{type:format==='json'?'application/json':'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='sleeve-'+new Date().toISOString().slice(0,10)+'.'+format;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setToast(format==='json'?'Backup exported. Keep it somewhere safe.':'CSV exported for your spreadsheet.')}
- async function importFile(file?:File){if(!file)return;try{if(file.size>12_000_000)throw Error('Choose a backup smaller than 12 MB.');const incoming=parseBackup(await file.text());const next=mergeRatings(readLocal(),incoming);if(writeLocal(next)){setToast('Backup imported. '+incoming.length+' ratings checked; newest versions kept.');setTab('collection')}}catch(e:any){setToast(e.message||'Could not import this backup.')}finally{if(importRef.current)importRef.current.value=''}}
- useEffect(()=>{const c=new AbortController();setLoading(true);setError('');(async()=>{let results:Song[];try{const r=await fetch('https://itunes.apple.com/search?'+new URLSearchParams({term:term||'Radiohead',entity:'song',media:'music',limit:'36',country:'US'}),{signal:c.signal});if(!r.ok)throw Error();const d:any=await r.json();results=d.results.filter((s:any)=>s.trackId).map((s:any)=>({id:s.trackId,title:s.trackName,artist:s.artistName,album:s.collectionName,art:s.artworkUrl100?.replace('100x100bb','600x600bb'),url:s.trackViewUrl,genre:s.primaryGenreName,year:s.releaseDate?.slice(0,4)}))}catch(e:any){if(c.signal.aborted)throw e;throw Error('Could not reach the music catalogue. Check your connection and try again.')}setSongs(results)})().catch(e=>{if(e.name!=='AbortError')setError(e.message)}).finally(()=>{if(!c.signal.aborted)setLoading(false)});return()=>c.abort()},[term]);
- useEffect(()=>{if(selected)dialogRef.current?.showModal();else dialogRef.current?.close()},[selected]);
- useEffect(()=>{if(!toast)return;const id=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(id)},[toast]);
- function open(s:Song){const r=ratings.find(r=>r.trackId===s.id);setSelected(s);setScore(r?.score??7.5);setNote(r?.note??'');setFavourite(r?.favourite??false)}
- function save(){if(!selected||!authReady)return;try{const next=mergeRatings(readLocal(),[{trackId:selected.id,song:selected,score,note,favourite,updatedAt:new Date().toISOString()}]);if(writeLocal(next)){setSelected(null);setToast('On the record. Saved on this device.')}}catch{setToast('Could not read your collection. Import a valid backup before saving.')}}
- function remove(id:number){try{const existing=readLocal(),removed=existing.find(r=>r.trackId===id);if(writeLocal(existing.filter(r=>r.trackId!==id))){setUndo(removed??null);setSelected(null);setToast('Rating removed. You can undo below.')}}catch{setToast('Could not remove this rating.')}}
- const sorted=[...ratings].filter(r=>(!favouritesOnly||r.favourite)&&[r.song.title,r.song.artist,r.song.album,r.note].join(' ').toLowerCase().includes(localQuery.toLowerCase())).sort((a,b)=>sort==='highest'?b.score-a.score:sort==='lowest'?a.score-b.score:sort==='title'?a.song.title.localeCompare(b.song.title):sort==='artist'?a.song.artist.localeCompare(b.song.artist):b.updatedAt.localeCompare(a.updatedAt));
- const mood=score>=9?'An all-time favourite.':score>=8?'On repeat, for a reason.':score>=7?'A very good listen.':score>=5?'Has its moments.':score>=3?'Not quite your frequency.':'A skip for you.';
- return <><div className="app-shell"><header><a href="./" className="brand"><span className="brand-icon"><Disc3 size={23}/></span>sleeve<span className="brand-dot">®</span></a><nav><button className={tab==='discover'?'active':''} onClick={()=>setTab('discover')}><Disc3 size={16}/>Discover</button><button className={tab==='collection'?'active':''} onClick={()=>setTab('collection')}><Library size={16}/>My collection{ratings.length>0&&<small>{ratings.length}</small>}</button></nav><div className="header-tools"><span className="local-badge"><ShieldCheck size={14}/> Yours. Locally.</span><button className="theme-button" onClick={()=>setDark(!dark)} aria-label={dark?'Switch to light theme':'Switch to dark theme'}>{dark?<Sun size={19}/>:<Moon size={19}/>}</button></div></header>
- <main>{storageError&&<div className="storage-error" role="alert">{storageError}</div>}<input ref={importRef} type="file" accept=".json,application/json" hidden onChange={e=>importFile(e.target.files?.[0])}/>{tab==='discover'?<><section className="hero"><div className="hero-copy"><div className="eyebrow"><span/> A LITTLE MORE THAN JUST LISTENING</div><h1>Good music.<br/>Your <em>take.</em></h1><p>Some songs stay with you.<br/>Rate the feeling. Keep the soundtrack.</p><button className="primary" onClick={()=>searchRef.current?.focus()}>Find your next favourite <ArrowRight size={18}/></button><div className="hero-caption"><Headphones size={15}/> No account. Just your taste.</div></div><div className="hero-art" aria-label="Illustrated record sleeve and vinyl"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><span className="art-label">THE PERSONAL SOUND ARCHIVE</span><div className="vinyl"><div className="record-label"><span>sleeve</span><small>SIDE A · YOUR ROTATION</small><i/></div></div><div className="album-cover"><div className="cover-top">A LIFE<br/>IN SOUND.</div><div className="cover-disc"/><div className="cover-bottom"><span>VOL. 001</span><Disc3 size={24}/><span>33⅓ RPM</span></div></div><div className="rating-sticker"><span>YOUR TASTE.<br/>YOUR RULES.</span><b>10<span>/10</span></b><small>NO WRONG ANSWERS</small></div><span className="art-footnote">EVERY SONG HAS A STORY. MAKE IT YOURS.</span></div></section>
- <section className="search-section"><div className="section-heading"><div><div className="eyebrow">THE CRATE DIG</div><h2>{term?'Your search, on record.':'Find your frequency.'}</h2></div><span className="quiet">A whole world of music. One search away.</span></div><form className="search-bar" onSubmit={e=>{e.preventDefault();setTerm(query.trim());setFilter('All sounds')}}><Search size={22}/><input ref={searchRef} aria-label="Search songs or artists" placeholder="A song, an artist, an obsession…" value={query} onChange={e=>setQuery(e.target.value)}/>{query&&<button type="button" className="clear" aria-label="Clear search" onClick={()=>{setQuery('');setTerm('')}}><X size={18}/></button>}<button className="search-submit">Search <ArrowRight size={17}/></button></form><div className="chips">{['All sounds','Alternative','Jazz','Indie','Pop','Electronic'].map(g=><button key={g} className={filter===g?'chosen':''} onClick={()=>{setFilter(g);setQuery('');setTerm(g==='All sounds'?'':g==='Alternative'?'Muse':g==='Jazz'?'Casiopea':g==='Indie'?'Laufey':g)}}>{g}</button>)}<span>Find something that feels like you.</span></div></section>
- <section className="results"><div className="results-heading"><h3>{term?'In the grooves':'Start somewhere good'}<span>{loading?'…':songs.length+' tracks'}</span></h3><span className="quiet">PICK A TRACK. LEAVE YOUR MARK. <ArrowUpRight size={14}/></span></div>{error?<div className="empty"><Disc3/><h3>A little static.</h3><p>{error}</p><button onClick={()=>{setTerm(term.trim()===term?term+' ':term.trim());}}>Try again</button></div>:loading?<div className="song-grid">{Array.from({length:6},(_,i)=><div className="skeleton" key={i}/>)}</div>:songs.length===0?<div className="empty"><Search/><h3>No tracks found.</h3><p>Try a different title or artist name.</p></div>:<div className="song-grid">{songs.map((s,i)=>{const r=ratings.find(r=>r.trackId===s.id);return <article className="song-card" key={s.id}><button className="art-button" onClick={()=>open(s)} aria-label={'Rate '+s.title}><img src={s.art} alt={s.album+' album artwork'} loading="lazy"/><span className="art-shade"/><span className="track-number">{String(i+1).padStart(2,'0')}</span><span className="rate-bubble">{r?<>{r.score.toFixed(1)} <Check size={14}/></>:<Plus size={24}/>}</span><span className="hover-label">{r?'Revisit your rating':'Give it a rating'} <ArrowUpRight size={17}/></span></button><div className="song-meta"><button onClick={()=>open(s)}>{s.title}</button><p>{s.artist}</p><div><span>{s.year} <i>·</i> {s.genre}</span><a href={s.url} target="_blank" rel="noreferrer" aria-label={'Open '+s.title+' on Apple Music'}><ArrowUpRight size={17}/></a></div></div></article>})}</div>}</section>
- <section className="collection-banner"><Disc3 size={42} strokeWidth={1}/><div><h3>Your taste deserves a home.</h3><p>Save the standouts. Remember the growers. Build your own music journal.</p></div><button onClick={()=>setTab('collection')}>Your collection <ArrowRight size={18}/></button></section></>:<section className="collection-page"><div className="eyebrow">A SOUNDTRACK THAT'S ALL YOURS</div><h1>My <em>collection.</em></h1><p className="intro">Every listen leaves a little something behind.</p><div className="backup-bar"><span><ShieldCheck size={17}/> Saved in this browser. Export a backup to keep it safe.</span><div><button onClick={()=>importRef.current?.click()}><Upload size={15}/>Import backup</button><button onClick={()=>download('csv')}><Download size={15}/>CSV</button><button className="export-json" onClick={()=>download('json')}><Download size={15}/>Export backup</button></div></div>{!authReady?<div className="empty">Opening your collection…</div>:<><div className="stats"><div><b>{ratings.length}</b><span>TRACKS ON RECORD</span></div><div><b>{ratings.length?(ratings.reduce((a,r)=>a+r.score,0)/ratings.length).toFixed(1):'—'}</b><span>AVERAGE SCORE</span></div><div><b>{new Set(ratings.map(r=>r.song.artist)).size}</b><span>DIFFERENT ARTISTS</span></div></div><div className="results-heading"><h3>Your rotation <span>{sorted.length} tracks</span></h3><label className="sort"><SlidersHorizontal size={15}/><select aria-label="Sort collection" value={sort} onChange={e=>setSort(e.target.value)}><option value="recent">Recently rated</option><option value="highest">Highest rated</option><option value="lowest">Lowest rated</option><option value="title">Song A–Z</option><option value="artist">Artist A–Z</option></select></label></div><div className="collection-filters"><label><Search size={17}/><input aria-label="Search your collection" value={localQuery} onChange={e=>setLocalQuery(e.target.value)} placeholder="Search songs, artists or your notes…"/></label><button className={favouritesOnly?'favourite-filter chosen':'favourite-filter'} onClick={()=>setFavouritesOnly(!favouritesOnly)}><Heart size={15} fill={favouritesOnly?'currentColor':'none'}/> Favourites</button></div>{!ratings.length?<div className="empty"><Library size={36}/><h2>The first track is the best part.</h2><p>Find a song you love and put it on record.</p><button className="primary" onClick={()=>setTab('discover')}>Discover music <ArrowRight size={18}/></button></div>:!sorted.length?<div className="empty"><Search/><h3>No matches in your collection.</h3><p>Try another search or turn off the favourites filter.</p><button onClick={()=>{setLocalQuery('');setFavouritesOnly(false)}}>Clear filters</button></div>:<div className="rating-list">{sorted.map(r=><button key={r.trackId} className="rating-row" onClick={()=>open(r.song)}><img src={r.song.art} alt=""/><div><h3>{r.song.title}{r.favourite&&<Heart size={12} fill="currentColor"/>}</h3><p>{r.song.artist}</p>{r.note&&<span className="review-note">{r.note}</span>}</div><span className="row-date">{new Date(r.updatedAt).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</span><b>{r.score.toFixed(1)}<small>/10</small></b><ArrowUpRight size={19}/></button>)}</div>}</>}</section>}</main><footer><a className="brand" href="./">sleeve<span className="brand-dot">®</span></a><span>A little less skipping. A little more feeling.</span><span>Local collection · Export anytime <span className="footer-dot">●</span> MADE FOR YOUR EARS.</span></footer></div>
- <dialog ref={dialogRef} onCancel={()=>setSelected(null)} onClick={e=>{if(e.target===e.currentTarget)setSelected(null)}}>{selected&&<div className="rating-dialog"><button className="close-dialog" aria-label="Close rating" onClick={()=>setSelected(null)}><X size={22}/></button><div className="dialog-song"><img src={selected.art} alt={selected.album}/><div><span className="eyebrow">PUT IT ON RECORD</span><h2>{selected.title}</h2><p>{selected.artist}</p><a href={selected.url} target="_blank" rel="noreferrer">Listen on Apple Music <ArrowUpRight size={13}/></a></div></div><div className="dial-area"><div className="rating-dial" onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);const b=e.currentTarget.getBoundingClientRect();const angle=(Math.atan2(e.clientX-b.x-b.width/2,-(e.clientY-b.y-b.height/2))+Math.PI*2)%(Math.PI*2);setScore(Math.round(angle/(Math.PI*2)*100)/10)}} onPointerMove={e=>{if(!e.currentTarget.hasPointerCapture(e.pointerId))return;const b=e.currentTarget.getBoundingClientRect();const angle=(Math.atan2(e.clientX-b.x-b.width/2,-(e.clientY-b.y-b.height/2))+Math.PI*2)%(Math.PI*2);setScore(Math.round(angle/(Math.PI*2)*100)/10)}} style={{'--score':score*10+'%'} as React.CSSProperties}><div><b>{score.toFixed(1)}</b><span>OUT OF 10</span></div></div><p>{mood}</p><div className="score-steppers"><button aria-label="Decrease score by 0.1" onClick={()=>setScore(Math.max(0,Math.round((score-.1)*10)/10))}><Minus size={16}/></button><span>Drag the record, or fine-tune below</span><button aria-label="Increase score by 0.1" onClick={()=>setScore(Math.min(10,Math.round((score+.1)*10)/10))}><Plus size={16}/></button></div></div><label className="range-label" htmlFor="score">Your rating <span>Drag to find the feeling</span></label><input id="score" className="rating-range" type="range" min="0" max="10" step="0.1" value={score} onChange={e=>setScore(Number(e.target.value))}/><div className="range-ticks"><span>0 · Skip</span><span>5 · It's okay</span><span>10 · Timeless</span></div><button className={favourite?'favourite-toggle chosen':'favourite-toggle'} onClick={()=>setFavourite(!favourite)}><Heart size={16} fill={favourite?'currentColor':'none'}/>{favourite?'One of your favourites':'Add to favourites'}</button><label className="note-label" htmlFor="note">A note to future you <span>optional</span></label><textarea id="note" value={note} onChange={e=>setNote(e.target.value)} maxLength={1000} placeholder="That bassline. That feeling. That one lyric…"/><div className="dialog-actions">{ratings.some(r=>r.trackId===selected.id)&&<button className="delete" onClick={()=>remove(selected.id)} aria-label="Delete rating"><Trash2 size={18}/></button>}<button className="primary" disabled={!authReady} onClick={save}>Save to my collection <Check size={18}/></button></div><p className="signin-note">Saved on this device. No sign-in needed.</p></div>}</dialog>{toast&&<div className="toast" role="status"><Check size={17}/>{toast}{undo&&<button onClick={()=>{try{if(writeLocal(mergeRatings(readLocal(),[undo]))){setUndo(null);setToast('Rating restored.')}}catch{setToast('Could not restore rating.')}}}>Undo</button>}</div>}</>
+
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { ArrowRight, ArrowUpRight, Check, Disc3, Download, Heart, Library, Minus, Moon, Plus, Search,
+  Shuffle, Sun, Trash2, Upload, X } from 'lucide-react';
+import { albumFor, discoveryTracks, genres, loadSpotifyLink, searchApple, shuffled, spotifySearch, type Kind, type Song } from '../lib/catalogue';
+import { backup, csv, mergeRatings, parseBackup, songKey, STORAGE_KEY, type Rating } from '../lib/local-library';
+
+const themeKey = 'sleeve.theme';
+const views = ['discover', 'random', 'collection'] as const;
+type View = typeof views[number];
+type Filter = 'all' | Kind;
+
+function readCollection() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  return raw ? parseBackup(raw) : [];
+}
+
+function artworkTitle(song: Song) {
+  return (song.album || song.title) + ' cover';
+}
+
+function Artwork({ song, eager = false }: { song: Song; eager?: boolean }) {
+  return <div className="artwork">
+    <Disc3 aria-hidden="true" />
+    {song.art && <img key={song.art} src={song.art} alt={artworkTitle(song)} loading={eager ? 'eager' : 'lazy'}
+      onError={event => { event.currentTarget.hidden = true; }} />}
+  </div>;
+}
+
+function KindSwitch({ value, onChange, includeAll = false }: {
+  value: Filter; onChange: (kind: Filter) => void; includeAll?: boolean;
+}) {
+  const choices: [Filter, string][] = [['track', 'Songs'], ['album', 'Albums']];
+  if (includeAll) choices.unshift(['all', 'All']);
+  return <div className="segments" aria-label="Music type">
+    {choices.map(([key, label]) => <button key={key} type="button" aria-pressed={value === key}
+      onClick={() => onChange(key)}>{label}</button>)}
+  </div>;
+}
+
+function pickBrowseSongs(kind: Kind, group: string, songs: Song[]) {
+  if (group !== genres[0]) songs = songs.filter(song => song.group === group);
+  else {
+    const groups = [...new Set(songs.map(song => song.group))];
+    songs = groups.flatMap(item => songs.find(song => song.group === item) || []);
+  }
+  if (kind === 'track') return songs;
+  const albums = songs.flatMap(song => albumFor(song) || []);
+  return [...new Map(albums.map(album => [songKey(album), album])).values()];
+}
+
+function formatDuration(milliseconds: number) {
+  const seconds = Math.round(milliseconds / 1000);
+  return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+}
+
+function RatingScale({ score, onChange }: { score: number; onChange: (value: number) => void }) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const display = hovered ?? score;
+  const description = display >= 9 ? 'All-time favourite' : display >= 8 ? 'On repeat' :
+    display >= 7 ? 'Really good' : display >= 5 ? 'Has its moments' : display >= 3 ? 'Not for me' : 'A skip';
+  const hue = Math.round(8 + display * 13);
+  const adjust = (step: number) => onChange(Math.max(0, Math.min(10, Math.round((score + step) * 10) / 10)));
+  return <div className="rating-scale" style={{ '--score-hue': hue } as CSSProperties}>
+    <div className="score-readout">
+      <output htmlFor="rating-range" aria-label="Rating preview"><b>{display.toFixed(1)}</b><span>/ 10</span></output>
+      <strong>{description}</strong>
+    </div>
+    <div className="score-steps" aria-label="Quick scores" onPointerLeave={() => setHovered(null)}>
+      {Array.from({ length: 11 }, (_, value) => <button key={value} type="button"
+        className={value <= display ? 'filled' : ''} aria-label={'Rate ' + value + ' out of 10'}
+        aria-pressed={score === value} onPointerEnter={event => { if (event.pointerType === 'mouse') setHovered(value); }}
+        onClick={() => { onChange(value); setHovered(null); }}>{value}</button>)}
+    </div>
+    <div className="fine-score">
+      <button type="button" className="icon-button" aria-label="Decrease rating by 0.1" onClick={() => adjust(-0.1)}><Minus size={16}/></button>
+      <input id="rating-range" type="range" aria-label="Fine-tune rating" min={0} max={10} step={0.1}
+        value={score} onChange={event => onChange(Number(event.target.value))} />
+      <button type="button" className="icon-button" aria-label="Increase rating by 0.1" onClick={() => adjust(0.1)}><Plus size={16}/></button>
+    </div>
+  </div>;
+}
+
+export default function Sleeve() {
+  const [view, setView] = useState<View>('discover');
+  const [dark, setDark] = useState(true);
+  const [ready, setReady] = useState(false);
+  const [ratings, setRatings] = useState<Rating[]>([]);
+  const [sort, setSort] = useState('recent');
+  const [collectionFilter, setCollectionFilter] = useState<Filter>('all');
+  const [collectionQuery, setCollectionQuery] = useState('');
+  const [onlyFavourites, setOnlyFavourites] = useState(false);
+  const [storageError, setStorageError] = useState('');
+  const [toast, setToast] = useState('');
+  const [undo, setUndo] = useState<Rating | null>(null);
+  const [selected, setSelected] = useState<Song | null>(null);
+  const [score, setScore] = useState(7.5);
+  const [note, setNote] = useState('');
+  const [favourite, setFavourite] = useState(false);
+  const [browse, setBrowse] = useState(discoveryTracks);
+  const [genre, setGenre] = useState(genres[0]);
+  const [randomGenre, setRandomGenre] = useState(genres[0]);
+  const [randomSong, setRandomSong] = useState<Song | null>(null);
+  const randomDeck = useRef<Song[]>([]);
+  const [kind, setKind] = useState<Kind>('track');
+  const [query, setQuery] = useState('');
+  const [search, setSearch] = useState({ term: '', revision: 0 });
+  const [results, setResults] = useState<Song[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [spotifyUrl, setSpotifyUrl] = useState('');
+  const [spotifyLoading, setSpotifyLoading] = useState(false);
+  const [spotifyError, setSpotifyError] = useState('');
+  const spotifyRequest = useRef<AbortController | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const importRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    function sync() {
+      try {
+        setRatings(readCollection());
+        setStorageError('');
+      } catch {
+        setStorageError('Sleeve could not read your saved collection.');
+      }
+    }
+    function onStorage(event: StorageEvent) {
+      if (event.key === STORAGE_KEY || event.key === null) sync();
+    }
+    function onHash() {
+      const hash = window.location.hash.slice(1) as View;
+      setView(views.includes(hash) ? hash : 'discover');
+    }
+    sync();
+    onHash();
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('hashchange', onHash);
+    try { setDark(localStorage.getItem(themeKey) !== 'light'); } catch {}
+    const mix = shuffled(discoveryTracks);
+    setBrowse(mix);
+    setRandomSong(mix[0]);
+    randomDeck.current = mix.slice(1);
+    setReady(true);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('hashchange', onHash);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    try { localStorage.setItem(themeKey, dark ? 'dark' : 'light'); } catch {}
+  }, [dark, ready]);
+
+  useEffect(() => {
+    if (!search.term) {
+      setLoading(false);
+      setSearchError('');
+      setResults([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+    let current = true;
+    setLoading(true);
+    setSearchError('');
+    searchApple(search.term, kind, controller.signal)
+      .then(items => { if (current) setResults(items); })
+      .catch(() => { if (current) setSearchError('Apple Music search is unavailable right now. Try again in a moment.'); })
+      .finally(() => { if (current) setLoading(false); window.clearTimeout(timeout); });
+    return () => {
+      current = false;
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [search, kind]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (selected && dialog && !dialog.open) dialog.showModal();
+    if (!selected && dialog?.open) dialog.close();
+  }, [selected]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => { setToast(''); setUndo(null); }, undo ? 9000 : 3500);
+    return () => window.clearTimeout(timeout);
+  }, [toast, undo]);
+
+  function navigate(next: View) {
+    if (view === next) return;
+    spotifyRequest.current?.abort();
+    if (next === 'discover') setBrowse(shuffled(discoveryTracks));
+    setView(next);
+    window.location.hash = next;
+    window.scrollTo(0, 0);
+  }
+
+  function submitSearch(event: FormEvent) {
+    event.preventDefault();
+    setSearch(previous => ({ term: query.trim(), revision: previous.revision + 1 }));
+  }
+
+  async function importSpotify(event: FormEvent) {
+    event.preventDefault();
+    const controller = new AbortController();
+    spotifyRequest.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+    setSpotifyError('');
+    setSpotifyLoading(true);
+    try {
+      const song = await loadSpotifyLink(spotifyUrl, controller.signal);
+      openRating(findRating(song)?.song || song);
+      setSpotifyUrl('');
+    } catch (error) {
+      setSpotifyError(controller.signal.aborted ? 'Spotify took too long to respond.' :
+        error instanceof Error ? error.message : 'Could not load that Spotify link.');
+    } finally {
+      window.clearTimeout(timeout);
+      spotifyRequest.current = null;
+      setSpotifyLoading(false);
+    }
+  }
+
+  function roll(group = randomGenre) {
+    if (!randomDeck.current.length || group !== randomGenre) {
+      const matches = discoveryTracks.filter(song => group === genres[0] || song.group === group);
+      const next = shuffled(matches);
+      if (next.length > 1 && next[0].id === randomSong?.id) next.push(next.shift()!);
+      randomDeck.current = next;
+    }
+    const next = randomDeck.current.shift();
+    if (next) setRandomSong(next);
+    setRandomGenre(group);
+  }
+
+  function findRating(song: Song) {
+    return ratings.find(rating => songKey(rating.song) === songKey(song));
+  }
+
+  function openRating(song: Song) {
+    const rating = findRating(song);
+    setScore(rating?.score ?? 7.5);
+    setNote(rating?.note ?? '');
+    setFavourite(rating?.favourite ?? false);
+    setSelected(song);
+  }
+
+  function updateCollection(update: (previous: Rating[]) => Rating[]) {
+    try {
+      const next = update(readCollection());
+      localStorage.setItem(STORAGE_KEY, backup(next));
+      setRatings(next);
+      setStorageError('');
+      return true;
+    } catch {
+      setToast('Could not update the collection in this browser.');
+      return false;
+    }
+  }
+
+  function saveRating(event: FormEvent) {
+    event.preventDefault();
+    if (!selected || !ready) return;
+    const rating: Rating = { trackId: selected.id, song: selected, score, note, favourite, updatedAt: new Date().toISOString() };
+    if (updateCollection(previous => mergeRatings(previous, [rating]))) {
+      setSelected(null);
+      setUndo(null);
+      setToast('Saved to your collection.');
+    }
+  }
+
+  function removeRating(song: Song) {
+    const removed = findRating(song);
+    if (removed && updateCollection(previous => previous.filter(rating => songKey(rating.song) !== songKey(song)))) {
+      setUndo(removed);
+      setSelected(null);
+      setToast('Rating removed.');
+    }
+  }
+
+  function download(format: 'json' | 'csv') {
+    const data = format === 'json' ? backup(ratings) : csv(ratings);
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([data], { type: format === 'json' ? 'application/json' : 'text/csv;charset=utf-8' }));
+    link.download = 'sleeve-' + new Date().toISOString().slice(0, 10) + '.' + format;
+    link.click();
+    const url = link.href;
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function importFile(file?: File) {
+    if (!file) return;
+    try {
+      if (file.size > 12_000_000) throw new Error('Choose a backup smaller than 12 MB.');
+      const incoming = parseBackup(await file.text());
+      if (updateCollection(previous => mergeRatings(previous, incoming))) {
+        setToast('Backup imported.');
+        navigate('collection');
+      }
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Could not import this backup.');
+    } finally {
+      if (importRef.current) importRef.current.value = '';
+    }
+  }
+
+  const featured = browse[0];
+  const displayed = search.term ? results : pickBrowseSongs(kind, genre, browse);
+  const collection = ratings.filter(rating =>
+    (collectionFilter === 'all' || (rating.song.kind || 'track') === collectionFilter) &&
+    (!onlyFavourites || rating.favourite) &&
+    [rating.song.title, rating.song.artist, rating.song.album, rating.note].join(' ').toLowerCase().includes(collectionQuery.trim().toLowerCase())
+  ).sort((a, b) => {
+    if (sort === 'highest') return b.score - a.score;
+    if (sort === 'lowest') return a.score - b.score;
+    if (sort === 'title') return a.song.title.localeCompare(b.song.title);
+    if (sort === 'artist') return a.song.artist.localeCompare(b.song.artist);
+    return b.updatedAt.localeCompare(a.updatedAt);
+  });
+  const selectedAlbum = selected && selected.kind !== 'album' ? albumFor(selected) : undefined;
+  const searching = Boolean(search.term);
+  const trackCount = ratings.filter(rating => rating.song.kind !== 'album').length;
+
+  return <div className="app-shell">
+    <header className="topbar">
+      <button className="brand" onClick={() => navigate('discover')}><span><Disc3 size={22}/></span>Sleeve</button>
+      <nav aria-label="Main navigation">
+        <button aria-current={view === 'discover' ? 'page' : undefined} onClick={() => navigate('discover')}><Disc3 size={17}/> <span>Discover</span></button>
+        <button aria-current={view === 'random' ? 'page' : undefined} onClick={() => navigate('random')}><Shuffle size={17}/> <span>Random song</span></button>
+        <button aria-current={view === 'collection' ? 'page' : undefined} onClick={() => navigate('collection')}><Library size={17}/> <span>My collection</span></button>
+      </nav>
+      <button className="icon-button theme" onClick={() => setDark(!dark)} aria-label={dark ? 'Use light theme' : 'Use dark theme'}>
+        {dark ? <Sun size={19}/> : <Moon size={19}/>}
+      </button>
+    </header>
+
+    <main>
+      {storageError && <p className="status" role="alert">{storageError}</p>}
+      {view === 'discover' && <>
+        {!searching && <section className="hero">
+          <div className="hero-copy">
+            <h1>Good music.<br/><em>Your take.</em></h1>
+            <p>Find your next favourite. Rate songs and albums, and keep a record of what you love.</p>
+            <button className="primary" onClick={() => { if (!randomSong) roll(); navigate('random'); }}><Shuffle size={18}/> Surprise me</button>
+          </div>
+          {featured && <button className="hero-record" onClick={() => openRating(featured)} aria-label={'Rate ' + featured.title}>
+            <div className="record-image"><Artwork song={featured} eager /></div>
+            <div className="record-label"><span><b>{featured.title}</b><small>{featured.artist}</small></span><ArrowUpRight size={20}/></div>
+          </button>}
+        </section>}
+
+        <section className="find-section" aria-label="Find music">
+          <form className="search-bar" onSubmit={submitSearch}>
+            <Search size={22}/>
+            <input ref={searchRef} aria-label="Search by title or artist" placeholder="Search songs, albums or artists"
+              value={query} maxLength={150} onChange={event => setQuery(event.target.value)}/>
+            {query && <button className="icon-button clear-search" type="button" aria-label="Clear search"
+              onClick={() => { setQuery(''); setSearch({ term: '', revision: 0 }); searchRef.current?.focus(); }}><X size={18}/></button>}
+            <button className="primary" type="submit">Search Apple Music</button>
+          </form>
+          <div className="browse-controls">
+            <KindSwitch value={kind} onChange={value => setKind(value as Kind)}/>
+            <a className="spotify-button" href={spotifySearch(query.trim() || search.term)} target="_blank" rel="noreferrer">
+              Search on Spotify <ArrowUpRight size={15}/>
+            </a>
+          </div>
+          <details className="spotify-import">
+            <summary>Rate from a Spotify link</summary>
+            <form onSubmit={importSpotify}>
+              <input type="url" aria-label="Spotify song or album link" placeholder="https://open.spotify.com/…" value={spotifyUrl}
+                maxLength={500} required onChange={event => setSpotifyUrl(event.target.value)}/>
+              <button type="submit" className="secondary" disabled={spotifyLoading}>{spotifyLoading ? 'Loading…' : 'Load Spotify link'}</button>
+            </form>
+            {spotifyError && <p role="alert">{spotifyError}</p>}
+          </details>
+        </section>
+
+        <section className="results" aria-labelledby="discovery-results">
+          <div className="section-heading">
+            <h2 id="discovery-results">{searching ? 'Results for “' + search.term + '”' : kind === 'album' ? 'Albums to explore' : 'In rotation'}</h2>
+            {!searching && <button className="secondary" onClick={() => setBrowse(shuffled(discoveryTracks))}><Shuffle size={16}/> Shuffle picks</button>}
+          </div>
+          {!searching && <div className="genre-list" aria-label="Filter featured music by genre">
+            {genres.map(item => <button key={item} aria-pressed={genre === item} onClick={() => setGenre(item)}>{item}</button>)}
+          </div>}
+          {searching && loading ? <p className="status" role="status">Searching Apple Music…</p> :
+            searching && searchError ? <div className="status" role="alert">{searchError}
+              <button className="secondary" onClick={() => setSearch(previous => ({ ...previous, revision: previous.revision + 1 }))}>Try again</button>
+            </div> :
+            displayed.length === 0 ? <p className="status">No {kind === 'album' ? 'albums' : 'songs'} found. Try a different title or artist.</p> :
+            <div className="music-grid">
+              {displayed.map(song => {
+                const rating = findRating(song);
+                return <button className="music-card" key={songKey(song)} onClick={() => openRating(song)}>
+                  <div className="card-media"><Artwork song={song}/><span className="card-rating">
+                    {rating ? rating.score.toFixed(1) : <Plus size={20}/>}
+                  </span></div>
+                  <b>{song.title}</b><span>{song.artist}</span>
+                </button>;
+              })}
+            </div>}
+        </section>
+      </>}
+
+      {view === 'random' && <section className="random-page">
+        <div className="page-heading">
+          <h1>Random song</h1>
+          <div className="random-controls">
+            <select aria-label="Random song genre" value={randomGenre} onChange={event => roll(event.target.value)}>
+              {genres.map(item => <option key={item}>{item}</option>)}
+            </select>
+            <button className="primary" onClick={() => roll()}><Shuffle size={18}/> Roll another</button>
+          </div>
+        </div>
+        {randomSong && <article className="random-card" key={songKey(randomSong)}>
+          <Artwork song={randomSong} eager/>
+          <div className="random-details" aria-live="polite">
+            <h2>{randomSong.title}</h2>
+            <dl>
+              <div><dt>Artist</dt><dd>{randomSong.artist}</dd></div>
+              <div><dt>Album</dt><dd>{randomSong.album || '—'}</dd></div>
+              <div><dt>Genre</dt><dd>{randomSong.genre || randomSong.group || '—'}</dd></div>
+              <div><dt>Release year</dt><dd>{randomSong.year || '—'}</dd></div>
+              <div><dt>Duration</dt><dd>{randomSong.duration ? formatDuration(randomSong.duration) : '—'}</dd></div>
+            </dl>
+            <div className="actions">
+              <button className="primary" onClick={() => openRating(randomSong)}>Rate song <Plus size={18}/></button>
+              {randomSong.url && <a className="secondary" href={randomSong.url} target="_blank" rel="noreferrer">Apple Music <ArrowUpRight size={16}/></a>}
+              <a className="spotify-button" href={spotifySearch(randomSong.title + ' ' + randomSong.artist)} target="_blank" rel="noreferrer">
+                Spotify <ArrowUpRight size={16}/>
+              </a>
+            </div>
+          </div>
+        </article>}
+      </section>}
+
+      {view === 'collection' && <section className="collection-page">
+        <div className="page-heading">
+          <h1>My collection</h1>
+          <div className="actions">
+            <button className="secondary" onClick={() => download('json')}><Download size={16}/> Export backup</button>
+            <button className="secondary" onClick={() => download('csv')}><Download size={16}/> Export CSV</button>
+            <button className="secondary" onClick={() => importRef.current?.click()}><Upload size={16}/> Import backup</button>
+            <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={event => importFile(event.target.files?.[0])}/>
+          </div>
+        </div>
+        <div className="collection-stats">
+          <div><b>{trackCount}</b><span>Songs rated</span></div>
+          <div><b>{ratings.length - trackCount}</b><span>Albums rated</span></div>
+          <div><b>{ratings.length ? (ratings.reduce((sum, rating) => sum + rating.score, 0) / ratings.length).toFixed(1) : '—'}</b><span>Average rating</span></div>
+        </div>
+        <div className="collection-controls">
+          <KindSwitch includeAll value={collectionFilter} onChange={setCollectionFilter}/>
+          <input type="search" placeholder="Search collection" aria-label="Search collection" value={collectionQuery} onChange={event => setCollectionQuery(event.target.value)}/>
+          <select aria-label="Sort collection" value={sort} onChange={event => setSort(event.target.value)}>
+            <option value="recent">Recently rated</option><option value="highest">Highest rated</option>
+            <option value="lowest">Lowest rated</option><option value="title">Title A–Z</option><option value="artist">Artist A–Z</option>
+          </select>
+          <button className="secondary" aria-pressed={onlyFavourites} onClick={() => setOnlyFavourites(!onlyFavourites)}>
+            <Heart size={16} fill={onlyFavourites ? 'currentColor' : 'none'}/> Favourites
+          </button>
+        </div>
+        {collection.length ? <div className="rating-list">
+          {collection.map(rating => <button key={songKey(rating.song)} className="rating-row" onClick={() => openRating(rating.song)}>
+            <Artwork song={rating.song}/>
+            <span><b>{rating.song.title}</b><small>{rating.song.artist && rating.song.artist + ' · '}{rating.song.kind === 'album' ? 'Album' : 'Song'}</small>
+              {rating.note && <small className="review-note">{rating.note}</small>}</span>
+            {rating.favourite && <Heart size={17} fill="currentColor" aria-label="Favourite"/>}
+            <strong>{rating.score.toFixed(1)}<small>/10</small></strong>
+          </button>)}
+        </div> : <div className="status">
+          <p>{ratings.length ? 'No ratings match those filters.' : 'Rate a song or album to start your collection.'}</p>
+          {!ratings.length && <button className="secondary" onClick={() => navigate('discover')}>Discover music <ArrowRight size={17}/></button>}
+        </div>}
+        <p className="collection-footer">Your collection is stored on this device.</p>
+      </section>}
+    </main>
+
+    <dialog ref={dialogRef} aria-labelledby="rating-title" onCancel={() => setSelected(null)}
+      onClick={event => { if (event.target === event.currentTarget) setSelected(null); }}>
+      {selected && <form className="rating-dialog" onSubmit={saveRating}>
+        <button type="button" className="icon-button close-dialog" aria-label="Close rating" onClick={() => setSelected(null)}><X size={22}/></button>
+        <div className="dialog-song"><Artwork song={selected} eager/><div>
+          <span className="type-label">{selected.kind === 'album' ? 'Album rating' : 'Song rating'}</span>
+          <h2 id="rating-title">{selected.title}</h2>
+          <p>{selected.artist}{selected.kind !== 'album' && selected.album ? ' · ' + selected.album : ''}</p>
+        </div></div>
+        <div className="dialog-links">
+          {selected.url && <a href={selected.url} target="_blank" rel="noreferrer">{selected.source === 'spotify' ? 'Spotify' : 'Apple Music'} <ArrowUpRight size={14}/></a>}
+          {selected.source !== 'spotify' && <a href={spotifySearch(selected.title + ' ' + selected.artist)} target="_blank" rel="noreferrer">Spotify <ArrowUpRight size={14}/></a>}
+          {selectedAlbum && <button type="button" onClick={() => openRating(selectedAlbum)}>Rate the album <ArrowRight size={14}/></button>}
+        </div>
+        {selected.source === 'spotify' && <label className="spotify-artist">
+          <span>Artist <small>Optional</small></span>
+          <input value={selected.artist} maxLength={250} onChange={event => setSelected({ ...selected, artist: event.target.value })}/>
+        </label>}
+        <RatingScale key={songKey(selected)} score={score} onChange={setScore}/>
+        <label className="note-label" htmlFor="rating-note">Listening notes <span>Optional</span></label>
+        <textarea id="rating-note" value={note} maxLength={1000} placeholder="What stood out to you?" onChange={event => setNote(event.target.value)}/>
+        <div className="dialog-actions">
+          {findRating(selected) && <button className="icon-button" type="button" aria-label="Delete rating" onClick={() => removeRating(selected)}><Trash2 size={19}/></button>}
+          <button type="button" className="icon-button" aria-label="Favourite" aria-pressed={favourite}
+            onClick={() => setFavourite(!favourite)}><Heart size={19} fill={favourite ? 'currentColor' : 'none'}/></button>
+          <button className="primary" type="submit" disabled={!ready}>Save rating <Check size={18}/></button>
+        </div>
+      </form>}
+    </dialog>
+    {toast && <div className="toast" role="status">{toast}{undo && <button type="button" onClick={() => {
+      if (updateCollection(previous => mergeRatings(previous, [undo]))) { setUndo(null); setToast('Rating restored.'); }
+    }}>Undo</button>}</div>}
+  </div>;
 }
