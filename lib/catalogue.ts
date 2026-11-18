@@ -85,3 +85,15 @@ export async function loadSpotifyLink(value: string, signal: AbortSignal): Promi
   return { id, url, kind: kind as Kind, source: 'spotify', title: item.title, artist: '', album: kind === 'album' ? item.title : '',
     art: item.thumbnail_url || '', genre: '', year: '' };
 }
+
+type ChartAlbum = { id: string; name: string; artistName: string; artworkUrl100: string; url: string; releaseDate?: string };
+
+export async function chartAlbums(signal: AbortSignal): Promise<Song[]> {
+  const response = await fetch('https://rss.marketingtools.apple.com/api/v2/us/music/most-played/10/albums.json', { signal });
+  if (!response.ok) return [];
+  const data: { feed: { results: ChartAlbum[] } } = await response.json();
+  return data.feed.results.slice(0, 6).map(album => ({
+    id: Number(album.id), kind: 'album', source: 'apple', title: album.name, album: album.name,
+    artist: album.artistName, art: album.artworkUrl100, url: album.url, genre: '', year: album.releaseDate?.slice(0, 4) || '',
+  }));
+}

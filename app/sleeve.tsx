@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Disc3, Download, Heart, Library, Minus, Moon, Plus, Search,
-  Shuffle, Sun, Trash2, Upload, X } from 'lucide-react';
-import { albumFor, discoveryTracks, genres, loadSpotifyLink, searchApple, shuffled, spotifySearch, type Kind, type Song } from '../lib/catalogue';
+  Shuffle, Star, Sun, Trash2, Upload, X } from 'lucide-react';
+import { albumFor, discoveryTracks, genres, loadSpotifyLink, chartAlbums, searchApple, shuffled, spotifySearch, type Kind, type Song } from '../lib/catalogue';
 import { backup, csv, mergeRatings, parseBackup, songKey, STORAGE_KEY, type Rating } from '../lib/local-library';
 
 const themeKey = 'sleeve.theme';
@@ -109,7 +109,8 @@ export default function Sleeve() {
   const [results, setResults] = useState<Song[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState('');
-  const [spotifyUrl, setSpotifyUrl] = useState('');
+  const [chart, setChart] = useState<Song[]>([]);
+  const spotifyLink = /^https?:\/\/open\.spotify\.com(?:\/|$)/i.test(query.trim());
   const [spotifyLoading, setSpotifyLoading] = useState(false);
   const [spotifyError, setSpotifyError] = useState('');
   const spotifyRequest = useRef<AbortController | null>(null);
@@ -190,6 +191,12 @@ export default function Sleeve() {
     return () => window.clearTimeout(timeout);
   }, [toast, undo]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    chartAlbums(controller.signal).then(setChart).catch(() => {});
+    return () => controller.abort();
+  }, []);
+
   function navigate(next: View) {
     if (view === next) return;
     spotifyRequest.current?.abort();
@@ -201,20 +208,26 @@ export default function Sleeve() {
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
+    setSpotifyError('');
+    if (spotifyLink) {
+      void importSpotify(query.trim());
+      return;
+    }
     setSearch(previous => ({ term: query.trim(), revision: previous.revision + 1 }));
   }
 
-  async function importSpotify(event: FormEvent) {
-    event.preventDefault();
+  async function importSpotify(url: string) {
+    spotifyRequest.current?.abort();
     const controller = new AbortController();
     spotifyRequest.current = controller;
     const timeout = window.setTimeout(() => controller.abort(), 12000);
     setSpotifyError('');
     setSpotifyLoading(true);
     try {
-      const song = await loadSpotifyLink(spotifyUrl, controller.signal);
+      const song = await loadSpotifyLink(url, controller.signal);
       openRating(findRating(song)?.song || song);
-      setSpotifyUrl('');
+      setQuery('');
+      setSearch({ term: '', revision: 0 });
     } catch (error) {
       setSpotifyError(controller.signal.aborted ? 'Spotify took too long to respond.' :
         error instanceof Error ? error.message : 'Could not load that Spotify link.');
@@ -308,7 +321,8 @@ export default function Sleeve() {
     }
   }
 
-  const featured = browse[0];
+  const featured = discoveryTracks.find(song => song.artist === 'Daft Punk' && song.title === 'One More Time') || browse[0];
+  const albumShelf = chart.length ? chart : pickBrowseSongs('album', genres[0], browse).slice(0, 6);
   const displayed = search.term ? results : pickBrowseSongs(kind, genre, browse);
   const collection = ratings.filter(rating =>
     (collectionFilter === 'all' || (rating.song.kind || 'track') === collectionFilter) &&
@@ -343,41 +357,59 @@ export default function Sleeve() {
       {view === 'discover' && <>
         {!searching && <section className="hero">
           <div className="hero-copy">
-            <h1>Good music.<br/><em>Your take.</em></h1>
+            <h1>Good music.<br/>Your take.</h1>
             <p>Find your next favourite. Rate songs and albums, and keep a record of what you love.</p>
-            <button className="primary" onClick={() => { if (!randomSong) roll(); navigate('random'); }}><Shuffle size={18}/> Surprise me</button>
+            <button className="primary" onClick={() => searchRef.current?.focus()}>Start rating <ArrowRight size={18}/></button>
           </div>
-          {featured && <button className="hero-record" onClick={() => openRating(featured)} aria-label={'Rate ' + featured.title}>
-            <div className="record-image"><Artwork song={featured} eager /></div>
-            <div className="record-label"><span><b>{featured.title}</b><small>{featured.artist}</small></span><ArrowUpRight size={20}/></div>
-          </button>}
+          {featured && <article className="hero-record">
+            <div className="record-image">
+              <Artwork song={featured} eager />
+              <div className="quick-score" aria-label="Quick rating">
+                {[2, 4, 6, 8, 10].map(value => <button key={value} type="button"
+                  aria-label={`Rate ${featured.title} ${value} out of 10`}
+                  onClick={() => { openRating(featured); setScore(value); }}>
+                  <Star size={18} fill={(findRating(featured)?.score ?? 0) >= value ? 'currentColor' : 'none'}/>
+                </button>)}
+              </div>
+            </div>
+            <button className="record-label" onClick={() => openRating(featured)}>
+              <span><b>{featured.title}</b><small>{featured.artist}</small></span><ArrowUpRight size={20}/>
+            </button>
+          </article>}
         </section>}
 
         <section className="find-section" aria-label="Find music">
           <form className="search-bar" onSubmit={submitSearch}>
-            <Search size={22}/>
-            <input ref={searchRef} aria-label="Search by title or artist" placeholder="Search songs, albums or artists"
-              value={query} maxLength={150} onChange={event => setQuery(event.target.value)}/>
-            {query && <button className="icon-button clear-search" type="button" aria-label="Clear search"
-              onClick={() => { setQuery(''); setSearch({ term: '', revision: 0 }); searchRef.current?.focus(); }}><X size={18}/></button>}
-            <button className="primary" type="submit">Search Apple Music</button>
-          </form>
-          <div className="browse-controls">
+            <div className="query-field">
+              <Search size={20}/>
+              <input ref={searchRef} aria-label="Search songs, albums, or paste a Spotify link"
+                placeholder="Search music or paste a Spotify link" value={query} maxLength={500}
+                onChange={event => { setQuery(event.target.value); setSpotifyError(''); }}/>
+              {query && <button className="icon-button clear-search" type="button" aria-label="Clear search"
+                onClick={() => { setQuery(''); setSpotifyError(''); setSearch({ term: '', revision: 0 }); searchRef.current?.focus(); }}><X size={18}/></button>}
+            </div>
             <KindSwitch value={kind} onChange={value => setKind(value as Kind)}/>
-            <a className="spotify-button" href={spotifySearch(query.trim() || search.term)} target="_blank" rel="noreferrer">
-              Search on Spotify <ArrowUpRight size={15}/>
-            </a>
-          </div>
-          <details className="spotify-import">
-            <summary>Rate from a Spotify link</summary>
-            <form onSubmit={importSpotify}>
-              <input type="url" aria-label="Spotify song or album link" placeholder="https://open.spotify.com/…" value={spotifyUrl}
-                maxLength={500} required onChange={event => setSpotifyUrl(event.target.value)}/>
-              <button type="submit" className="secondary" disabled={spotifyLoading}>{spotifyLoading ? 'Loading…' : 'Load Spotify link'}</button>
-            </form>
-            {spotifyError && <p role="alert">{spotifyError}</p>}
-          </details>
+            <div className="platforms">
+              <button className="primary" disabled={spotifyLoading} type="submit">
+                {spotifyLoading ? 'Loading…' : spotifyLink ? 'Rate Spotify link' : 'Search Apple Music'}
+              </button>
+              {!spotifyLink && <a className="spotify-button" href={spotifySearch(query.trim() || search.term)} target="_blank" rel="noreferrer">
+                Spotify <ArrowUpRight size={15}/>
+              </a>}
+            </div>
+          </form>
+          {spotifyError && <p role="alert">{spotifyError}</p>}
         </section>
+
+        {!searching && <section className="album-shelf" aria-labelledby="shelf-heading">
+          <div className="section-heading"><h2 id="shelf-heading">{chart.length ? 'Trending albums' : 'Albums in the spotlight'}</h2>
+            {chart.length > 0 && <small>Apple Music · US</small>}</div>
+          <div className="shelf-grid">{albumShelf.map((album, index) =>
+            <button className="shelf-card" key={songKey(album)} onClick={() => openRating(album)}>
+              <Artwork song={album}/><span><b>{album.title}</b><small>{album.artist}</small></span>
+              {chart.length > 0 && <strong>#{index + 1}</strong>}
+            </button>)}</div>
+        </section>}
 
         <section className="results" aria-labelledby="discovery-results">
           <div className="section-heading">
