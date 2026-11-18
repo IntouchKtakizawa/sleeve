@@ -42,32 +42,14 @@ export function discoveryPool(kind: Kind, group: string): Song[] {
 
 export function drawDiscovery(pool: Song[], round: DiscoveryRound | undefined,
   count: number, lastItems = round?.items ?? []): DiscoveryRound {
-  const order = shuffled(pool);
-  const items: Song[] = [];
+  const seen = new Set(round?.seen);
   const previous = new Set(lastItems.map(songKey));
-  const picked = new Set<string>();
-  let seen = new Set(round?.seen);
-  const size = Math.min(count, pool.length);
-
-  function take(candidates: Song[]) {
-    for (const song of candidates) {
-      if (items.length === size) break;
-      const key = songKey(song);
-      if (seen.has(key) || picked.has(key)) continue;
-      items.push(song);
-      seen.add(key);
-      picked.add(key);
-    }
-  }
-
-  take(order.filter(song => !previous.has(songKey(song))));
-  take(order);
-  if (items.length < size) {
-    seen = new Set();
-    take(order.filter(song => !previous.has(songKey(song))));
-    take(order);
-  }
-
+  const available = shuffled(pool.filter(song => !seen.has(songKey(song))));
+  const items = [
+    ...available.filter(song => !previous.has(songKey(song))),
+    ...available.filter(song => previous.has(songKey(song))),
+  ].slice(0, count);
+  for (const song of items) seen.add(songKey(song));
   return { items, seen };
 }
 
@@ -90,8 +72,8 @@ type AppleItem = {
   trackCount?: number;
 };
 
-export async function searchApple(query: string, kind: Kind, signal: AbortSignal): Promise<Song[]> {
-  const params = new URLSearchParams({ term: query, entity: kind === 'track' ? 'song' : 'album', media: 'music', limit: '36', country: 'US' });
+export async function searchApple(query: string, kind: Kind, signal: AbortSignal, country = 'US'): Promise<Song[]> {
+  const params = new URLSearchParams({ term: query, entity: kind === 'track' ? 'song' : 'album', media: 'music', limit: '36', country });
   const response = await fetch('https://itunes.apple.com/search?' + params, { signal });
   if (!response.ok) throw new Error('Apple Music is unavailable right now. Try again in a moment.');
   const data: { results: AppleItem[] } = await response.json();

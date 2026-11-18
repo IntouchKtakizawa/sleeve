@@ -4,13 +4,14 @@ import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 
 import { ArrowRight, ArrowUpRight, Check, Disc3, Download, Heart, Library, Minus, Moon, Plus, Search,
   Shuffle, Star, Sun, Trash2, Upload, X } from 'lucide-react';
 import { albumFor, chartAlbums, discoveryPool, discoveryTracks, drawDiscovery, genres, loadSpotifyLink, searchApple, spotifySearch, type Kind, type Song } from '../lib/catalogue';
+import { DiscoverySource } from '../lib/discovery-source';
 import { backup, csv, mergeRatings, parseBackup, songKey, STORAGE_KEY, type Rating } from '../lib/local-library';
 
 const themeKey = 'sleeve.theme';
 const views = ['discover', 'random', 'collection'] as const;
 type View = typeof views[number];
 type Filter = 'all' | Kind;
-type DiscoveryRounds = Record<string, ReturnType<typeof drawDiscovery>>;
+type DiscoveryRound = ReturnType<typeof drawDiscovery> & { pending?: boolean; unavailable?: boolean };
 const featured = discoveryTracks.find(song => song.artist === 'Daft Punk' && song.title === 'One More Time') || discoveryTracks[0];
 
 function readCollection() {
@@ -73,6 +74,49 @@ function RatingScale({ score, onChange }: { score: number; onChange: (value: num
   </div>;
 }
 
+function useDiscovery(source: DiscoverySource, kind: Kind, group: string, count: number) {
+  const [rounds, setRounds] = useState<Record<string, DiscoveryRound>>({});
+  const key = kind + ':' + group;
+  const current = rounds[key];
+
+  useEffect(() => {
+    if (current) return;
+    const initial = drawDiscovery(source.songs(kind, group), undefined, count);
+    setRounds(previous => previous[key] ? previous : { ...previous, [key]: initial });
+  }, [count, current, group, key, kind, source]);
+
+  async function advance(nextGroup = group) {
+    const nextKey = kind + ':' + nextGroup;
+    const round = rounds[nextKey];
+    if (round?.pending) return;
+    const pool = source.songs(kind, nextGroup);
+    const remaining = pool.length - (round?.seen.size ?? 0);
+    const needsRefill = remaining < count;
+    const shouldPrefetch = !round || round.seen.size <= count || remaining <= Math.max(count * 3, 14);
+    if (needsRefill) {
+      setRounds(previous => {
+        const waiting = previous[nextKey] ?? { items: [], seen: new Set<string>() };
+        return { ...previous, [nextKey]: { ...waiting, pending: true } };
+      });
+      await source.extend(kind, nextGroup);
+    } else if (shouldPrefetch) {
+      void source.extend(kind, nextGroup);
+    }
+
+    const available = source.songs(kind, nextGroup);
+    setRounds(previous => {
+      const previousRound = previous[nextKey];
+      const next = drawDiscovery(available, previousRound, count, previous[key]?.items);
+      if (!next.items.length && previousRound) {
+        return { ...previous, [nextKey]: { ...previousRound, pending: false, unavailable: true } };
+      }
+      return { ...previous, [nextKey]: next };
+    });
+  }
+
+  return { current, advance };
+}
+
 export default function Sleeve() {
   const [view, setView] = useState<View>('discover');
   const [dark, setDark] = useState(true);
@@ -89,10 +133,8 @@ export default function Sleeve() {
   const [score, setScore] = useState(7.5);
   const [note, setNote] = useState('');
   const [favourite, setFavourite] = useState(false);
-  const [browseRounds, setBrowseRounds] = useState<DiscoveryRounds>({});
   const [genre, setGenre] = useState(genres[0]);
   const [randomGenre, setRandomGenre] = useState(genres[0]);
-  const [randomRounds, setRandomRounds] = useState<DiscoveryRounds>({});
   const [kind, setKind] = useState<Kind>('track');
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState({ term: '', revision: 0 });
@@ -101,7 +143,9 @@ export default function Sleeve() {
   const [searchError, setSearchError] = useState('');
   const [chart, setChart] = useState<Song[]>([]);
   const [spotlightAlbums, setSpotlightAlbums] = useState<Song[]>([]);
-  const browseKey = kind + ':' + genre;
+  const [discovery] = useState(() => new DiscoverySource());
+  const browse = useDiscovery(discovery, kind, genre, 7);
+  const random = useDiscovery(discovery, 'track', randomGenre, 1);
   const spotifyLink = /^https?:\/\/open\.spotify\.com(?:\/|$)/i.test(query.trim());
   const [spotifyLoading, setSpotifyLoading] = useState(false);
   const [spotifyError, setSpotifyError] = useState('');
@@ -131,9 +175,6 @@ export default function Sleeve() {
     window.addEventListener('storage', onStorage);
     window.addEventListener('hashchange', onHash);
     try { setDark(localStorage.getItem(themeKey) !== 'light'); } catch {}
-    setRandomRounds(previous => previous[genres[0]] ? previous : {
-      [genres[0]]: drawDiscovery(discoveryTracks, undefined, 1),
-    });
     setSpotlightAlbums(genres.slice(1).flatMap(group =>
       drawDiscovery(discoveryPool('album', group), undefined, 1).items).slice(0, 6));
     setReady(true);
@@ -190,12 +231,6 @@ export default function Sleeve() {
     return () => controller.abort();
   }, []);
 
-  useEffect(() => {
-    setBrowseRounds(previous => previous[browseKey] ? previous : {
-      ...previous, [browseKey]: drawDiscovery(discoveryPool(kind, genre), undefined, 7),
-    });
-  }, [browseKey, genre, kind]);
-
   function navigate(next: View) {
     if (view === next) return;
     spotifyRequest.current?.abort();
@@ -236,17 +271,8 @@ export default function Sleeve() {
     }
   }
 
-  function shufflePicks() {
-    setBrowseRounds(previous => ({
-      ...previous, [browseKey]: drawDiscovery(discoveryPool(kind, genre), previous[browseKey], 7),
-    }));
-  }
-
   function roll(group = randomGenre) {
-    setRandomRounds(previous => ({
-      ...previous,
-      [group]: drawDiscovery(discoveryPool('track', group), previous[group], 1, previous[randomGenre]?.items),
-    }));
+    void random.advance(group);
     setRandomGenre(group);
   }
 
@@ -322,8 +348,8 @@ export default function Sleeve() {
   }
 
   const albumShelf = chart.length ? chart : spotlightAlbums;
-  const displayed = search.term ? results : browseRounds[browseKey]?.items ?? [];
-  const randomSong = randomRounds[randomGenre]?.items[0];
+  const displayed = search.term ? results : browse.current?.items ?? [];
+  const randomSong = random.current?.items[0];
   const collection = ratings.filter(rating =>
     (collectionFilter === 'all' || (rating.song.kind || 'track') === collectionFilter) &&
     (!onlyFavourites || rating.favourite) &&
@@ -417,11 +443,15 @@ export default function Sleeve() {
         <section className="results" aria-labelledby="discovery-results">
           <div className="section-heading">
             <h2 id="discovery-results">{searching ? 'Results for “' + search.term + '”' : kind === 'album' ? 'Albums to explore' : 'In rotation'}</h2>
-            {!searching && <button className="secondary" onClick={shufflePicks}><Shuffle size={16}/> Shuffle picks</button>}
+            {!searching && <button className="secondary" disabled={browse.current?.pending} onClick={() => void browse.advance()}>
+              <Shuffle size={16}/> {browse.current?.pending ? 'Finding more…' : 'Shuffle picks'}
+            </button>}
           </div>
           {!searching && <div className="genre-list" aria-label="Filter featured music by genre">
             {genres.map(item => <button key={item} aria-pressed={genre === item} onClick={() => setGenre(item)}>{item}</button>)}
           </div>}
+          {!searching && browse.current?.unavailable &&
+            <p className="status" role="status">Couldn’t load more new picks. Try again in a moment.</p>}
           {searching && loading ? <p className="status" role="status">Searching Apple Music…</p> :
             searching && searchError ? <div className="status" role="alert">{searchError}
               <button className="secondary" onClick={() => setSearch(previous => ({ ...previous, revision: previous.revision + 1 }))}>Try again</button>
@@ -448,9 +478,12 @@ export default function Sleeve() {
             <select aria-label="Random song genre" value={randomGenre} onChange={event => roll(event.target.value)}>
               {genres.map(item => <option key={item}>{item}</option>)}
             </select>
-            <button className="primary" onClick={() => roll()}><Shuffle size={18}/> Roll another</button>
+            <button className="primary" disabled={random.current?.pending} onClick={() => roll()}>
+              <Shuffle size={18}/> {random.current?.pending ? 'Finding more…' : 'Roll another'}
+            </button>
           </div>
         </div>
+        {random.current?.unavailable && <p className="status" role="status">Couldn’t load a new song. Try again in a moment.</p>}
         {randomSong && <article className="random-card" key={songKey(randomSong)}>
           <Artwork song={randomSong} eager/>
           <div className="random-details" aria-live="polite">
