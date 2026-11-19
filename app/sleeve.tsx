@@ -74,6 +74,25 @@ function RatingScale({ score, onChange }: { score: number; onChange: (value: num
   </div>;
 }
 
+function sleeveEntry(dialog: HTMLDialogElement | null) {
+  if (!dialog || dialog.open || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const rect = document.activeElement?.getBoundingClientRect();
+  dialog.style.setProperty('--entry-x', rect ? (rect.left + rect.width / 2 - innerWidth / 2) + 'px' : '0px');
+  dialog.style.setProperty('--entry-y', rect ? (rect.top + rect.height / 2 - innerHeight / 2) + 'px' : '20px');
+  try {
+    const audio = new AudioContext();
+    const length = Math.floor(audio.sampleRate * .22);
+    const buffer = audio.createBuffer(1, length, audio.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.sin(Math.PI * i / length);
+    const sound = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
+    sound.buffer = buffer; filter.type = 'bandpass'; filter.frequency.setValueAtTime(500, audio.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(2200, audio.currentTime + .18);
+    gain.gain.value = .035; sound.connect(filter).connect(gain).connect(audio.destination);
+    sound.onended = () => { void audio.close(); }; sound.start();
+  } catch {}
+}
+
 function useDiscovery(source: DiscoverySource, kind: Kind, group: string, count: number) {
   const [rounds, setRounds] = useState<Record<string, DiscoveryRound>>({});
   const key = kind + ':' + group;
@@ -81,11 +100,12 @@ function useDiscovery(source: DiscoverySource, kind: Kind, group: string, count:
 
   useEffect(() => {
     if (current) return;
+    void source.extend(kind, group);
     const initial = drawDiscovery(source.songs(kind, group), undefined, count);
     setRounds(previous => previous[key] ? previous : { ...previous, [key]: initial });
   }, [count, current, group, key, kind, source]);
 
-  async function advance(nextGroup = group) {
+  async function advance(nextGroup = group, append = false) {
     const nextKey = kind + ':' + nextGroup;
     const round = rounds[nextKey];
     if (round?.pending) return;
@@ -110,7 +130,7 @@ function useDiscovery(source: DiscoverySource, kind: Kind, group: string, count:
       if (!next.items.length && previousRound) {
         return { ...previous, [nextKey]: { ...previousRound, pending: false, unavailable: true } };
       }
-      return { ...previous, [nextKey]: next };
+      return { ...previous, [nextKey]: append && previousRound ? { ...next, items: [...previousRound.items, ...next.items] } : next };
     });
   }
 
@@ -144,7 +164,7 @@ export default function Sleeve() {
   const [chart, setChart] = useState<Song[]>([]);
   const [spotlightAlbums, setSpotlightAlbums] = useState<Song[]>([]);
   const [discovery] = useState(() => new DiscoverySource());
-  const browse = useDiscovery(discovery, kind, genre, 7);
+  const browse = useDiscovery(discovery, kind, genre, 28);
   const random = useDiscovery(discovery, 'track', randomGenre, 1);
   const spotifyLink = /^https?:\/\/open\.spotify\.com(?:\/|$)/i.test(query.trim());
   const [spotifyLoading, setSpotifyLoading] = useState(false);
@@ -281,6 +301,7 @@ export default function Sleeve() {
   }
 
   function openRating(song: Song) {
+    sleeveEntry(dialogRef.current);
     const rating = findRating(song);
     setScore(rating?.score ?? 7.5);
     setNote(rating?.note ?? '');
@@ -468,6 +489,7 @@ export default function Sleeve() {
                 </button>;
               })}
             </div>}
+          {!searching && displayed.length > 0 && <div className="feed-more"><button className="secondary" disabled={browse.current?.pending} onClick={() => void browse.advance(genre, true)}>{browse.current?.pending ? "Finding more…" : "Load more music"}</button></div>}
         </section>
       </>}
 

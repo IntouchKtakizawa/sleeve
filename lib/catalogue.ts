@@ -73,7 +73,7 @@ type AppleItem = {
 };
 
 export async function searchApple(query: string, kind: Kind, signal: AbortSignal, country = 'US'): Promise<Song[]> {
-  const params = new URLSearchParams({ term: query, entity: kind === 'track' ? 'song' : 'album', media: 'music', limit: '36', country });
+  const params = new URLSearchParams({ term: query, entity: kind === 'track' ? 'song' : 'album', media: 'music', limit: '100', country });
   const response = await fetch('https://itunes.apple.com/search?' + params, { signal });
   if (!response.ok) throw new Error('Apple Music is unavailable right now. Try again in a moment.');
   const data: { results: AppleItem[] } = await response.json();
