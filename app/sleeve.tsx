@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { ArrowRight, ArrowUpRight, Check, Disc3, Download, Heart, Library, Minus, Moon, Plus, Search,
   Shuffle, Star, Sun, Trash2, Upload, X } from 'lucide-react';
 import { albumFor, chartAlbums, discoveryPool, discoveryTracks, drawDiscovery, genres, loadSpotifyLink, searchApple, spotifySearch, type Kind, type Song } from '../lib/catalogue';
@@ -8,11 +8,20 @@ import { DiscoverySource } from '../lib/discovery-source';
 import { backup, csv, mergeRatings, parseBackup, songKey, STORAGE_KEY, type Rating } from '../lib/local-library';
 
 const themeKey = 'sleeve.theme';
-const views = ['discover', 'random', 'collection'] as const;
+const views = ['home', 'discover', 'search', 'random', 'collection', 'insights'] as const;
 type View = typeof views[number];
 type Filter = 'all' | Kind;
 type DiscoveryRound = ReturnType<typeof drawDiscovery> & { pending?: boolean; unavailable?: boolean };
-const featured = discoveryTracks.find(song => song.artist === 'Daft Punk' && song.title === 'One More Time') || discoveryTracks[0];
+const featured = discoveryTracks[Math.floor(Date.now()/86400000)%discoveryTracks.length];
+const discoverySections = [
+  ['Hidden gems', 'Go beyond the charts', 'Indie'],
+  ['Across the decades', 'Find a different era', 'Rock'],
+  ['Around the world', 'Beyond your usual borders', 'Around the World'],
+  ['Something different', 'Explore unexpected sounds', 'Jazz & Soul'],
+  ['Electronic journeys', 'From ambience to the dance floor', 'Electronic'],
+] as const;
+function stored<T>(key:string, fallback:T):T {try{return JSON.parse(localStorage.getItem(key)||'null')??fallback}catch{return fallback}}
+function remember(key:string,value:unknown){try{localStorage.setItem(key,JSON.stringify(value))}catch{}}
 
 function readCollection() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -50,9 +59,7 @@ function formatDuration(milliseconds: number) {
 
 const vibeOptions = ['Great Mix', 'Heavy Bass', 'Catchy Hook', 'Repeat Worthy', 'Grower', 'Late Night', 'Great Vocals', 'Atmospheric'];
 function ratingTier(score: number) {
-  return score >= 9 ? ['#f4d578', 'Masterpiece · No skips'] : score >= 8 ? ['#b7ed79', 'Heavy rotation'] :
-    score >= 7 ? ['#a3e0a7', 'Solid · Grew on me'] : score >= 5 ? ['#e3b66d', 'Mid'] :
-    score >= 3 ? ['#e28f65', 'Not my vibe'] : ['#e07979', 'Skip'];
+  return [`hsl(${score*12} 72% 62%)`, score >= 9 ? 'Masterpiece' : score >= 8 ? 'Heavy rotation' : score >= 7 ? 'Great' : score >= 5 ? 'Average' : score >= 3 ? 'Not my vibe' : 'Skip'];
 }
 function RatingScale({ score, onChange, previous }: { score: number; onChange: (value: number) => void; previous?: number }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -112,6 +119,7 @@ function TrackPreview({song}:{song:Song}) {
     {album&&tracks.length>1&&<select aria-label="Track to preview" value={index} onChange={e=>changeTrack(Number(e.target.value))}>{tracks.map((t,i)=><option key={t.id} value={i}>{t.title}</option>)}</select>}
     {track&&<><audio key={track.id} ref={audio} src={track.src} preload="metadata" onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onEnded={()=>setPlaying(false)} onTimeUpdate={e=>setSeconds(e.currentTarget.currentTime)} onLoadedMetadata={e=>{if(Number.isFinite(e.currentTarget.duration))setDuration(e.currentTarget.duration)}} onError={()=>{setPlaying(false);setError('Preview unavailable. Try Apple Music.')}}/>
       <div className="preview-timeline"><span>{formatDuration(seconds*1000)}</span><input type="range" min={0} max={duration} step={0.1} value={Math.min(seconds,duration)} aria-label="Seek preview" onChange={e=>{const value=Number(e.target.value);if(audio.current&&Number.isFinite(audio.current.duration)){audio.current.currentTime=value;setSeconds(value)}}}/><span>{formatDuration(duration*1000)}</span></div>
+      <label className="preview-volume">Volume <input aria-label="Preview volume" type="range" min="0" max="1" step="0.05" defaultValue="1" onChange={e=>{if(audio.current)audio.current.volume=Number(e.target.value)}}/></label>
       <a className="preview-credit" href={track.url} target="_blank" rel="noreferrer">Listen to the full track on Apple Music ↗</a></>}
       {error&&<small role="status">{error}</small>}
     </div>
@@ -198,7 +206,17 @@ function useDiscovery(source: DiscoverySource, kind: Kind, group: string, count:
 }
 
 export default function Sleeve() {
-  const [view, setView] = useState<View>('discover');
+  const [view, setView] = useState<View>('home');
+  const [history,setHistory]=useState<Song[]>([]);
+  const randomBusy=useRef(false);
+  const [historyIndex,setHistoryIndex]=useState(-1);
+  const [grid,setGrid]=useState(true);
+  const [shelf,setShelf]=useState('All records');
+  const [shelves,setShelves]=useState<Record<string,string[]>>({});
+  const [limit,setLimit]=useState(60);
+  const [recentSearches,setRecentSearches]=useState<string[]>([]);
+  const [previewSong,setPreviewSong]=useState<Song|null>(null);
+  const [discoveryMode,setDiscoveryMode]=useState('Any music');
   const [dark, setDark] = useState(true);
   const [ready, setReady] = useState(false);
   const [ratings, setRatings] = useState<Rating[]>([]);
@@ -251,9 +269,12 @@ export default function Sleeve() {
     }
     function onHash() {
       const hash = window.location.hash.slice(1) as View;
-      setView(views.includes(hash) ? hash : 'discover');
+      setView(views.includes(hash) ? hash : 'home');
     }
     sync();
+    const savedHistory=stored<Song[]>('sleeve.history.v1',[]);setHistory(savedHistory);if(savedHistory.length)setHistoryIndex(0);
+    setShelves(stored('sleeve.shelves.v1',{}));
+    setRecentSearches(stored('sleeve.searches.v1',[]));
     onHash();
     window.addEventListener('storage', onStorage);
     window.addEventListener('hashchange', onHash);
@@ -266,6 +287,8 @@ export default function Sleeve() {
       window.removeEventListener('hashchange', onHash);
     };
   }, []);
+  useEffect(()=>{if(!ready)return;const term=query.trim();if(!term||spotifyLink)return;const id=setTimeout(()=>setSearch(p=>p.term===term?p:{term,revision:p.revision+1}),380);return()=>clearTimeout(id)},[query,ready,spotifyLink]);
+  useEffect(()=>{setLimit(60)},[sort,collectionFilter,collectionQuery,shelf,onlyFavourites]);
 
   useEffect(() => {
     if (!ready) return;
@@ -317,6 +340,7 @@ export default function Sleeve() {
   function navigate(next: View) {
     if (view === next) return;
     spotifyRequest.current?.abort();
+    if(next!=='search'){setQuery('');setSearch({term:'',revision:0})}
     setView(next);
     window.location.hash = next;
     window.scrollTo(0, 0);
@@ -330,6 +354,7 @@ export default function Sleeve() {
       return;
     }
     setSearch(previous => ({ term: query.trim(), revision: previous.revision + 1 }));
+    if(query.trim()){const next=[query.trim(),...recentSearches.filter(x=>x!==query.trim())].slice(0,8);setRecentSearches(next);remember('sleeve.searches.v1',next)}
   }
 
   async function importSpotify(url: string) {
@@ -354,9 +379,17 @@ export default function Sleeve() {
     }
   }
 
-  function roll(group = randomGenre) {
-    void random.advance(group);
+  async function roll(group = randomGenre) {
+    if(randomBusy.current)return;
+    randomBusy.current=true;
+    try{
     setRandomGenre(group);
+    const seen=new Set([...history,...(random.current?.items||[])].map(s=>songKey(s)));
+    const choose=()=>discovery.songs('track',group).filter(s=>!seen.has(songKey(s))&&(discoveryMode!=='Unfamiliar genres'||!ratings.some(r=>r.song.genre===s.genre)));
+    let pool=choose();if(pool.length<5){await discovery.extend('track',group);pool=choose()}
+    if(!pool.length){setToast('No fresh tracks in this selection. Try another genre.');return}
+    const song=pool[Math.floor(Math.random()*pool.length)];const next=[song,...history].slice(0,2000);setHistory(next);remember('sleeve.history.v1',next);setHistoryIndex(0);setPreviewSong(null);
+    }finally{randomBusy.current=false}
   }
 
   function findRating(song: Song) {
@@ -407,7 +440,7 @@ export default function Sleeve() {
   }
 
   function download(format: 'json' | 'csv') {
-    const data = format === 'json' ? backup(ratings) : csv(ratings);
+    const data = format === 'json' ? JSON.stringify({...JSON.parse(backup(ratings)),shelves},null,2) : csv(ratings);
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([data], { type: format === 'json' ? 'application/json' : 'text/csv;charset=utf-8' }));
     link.download = 'sleeve-' + new Date().toISOString().slice(0, 10) + '.' + format;
@@ -420,8 +453,9 @@ export default function Sleeve() {
     if (!file) return;
     try {
       if (file.size > 12_000_000) throw new Error('Choose a backup smaller than 12 MB.');
-      const incoming = parseBackup(await file.text());
+      const raw=await file.text();const incoming = parseBackup(raw);const extra=JSON.parse(raw).shelves;
       if (updateCollection(previous => mergeRatings(previous, incoming))) {
+        if(extra&&typeof extra==='object'&&!Array.isArray(extra)){const next={...shelves};for(const [name,keys] of Object.entries(extra)){if(name.length<=80&&Array.isArray(keys)&&keys.every(k=>typeof k==='string'))next[name]=[...new Set([...(next[name]||[]),...keys])]}setShelves(next);remember('sleeve.shelves.v1',next)}
         setToast('Backup imported.');
         navigate('collection');
       }
@@ -434,16 +468,20 @@ export default function Sleeve() {
 
   const albumShelf = chart.length ? chart : spotlightAlbums;
   const displayed = search.term ? results : browse.current?.items ?? [];
-  const randomSong = random.current?.items[0];
+  const randomSong = history[historyIndex] || random.current?.items[0];
+  const ratingMap=useMemo(()=>new Map(ratings.map(r=>[songKey(r.song),r])),[ratings]);
+  const genreStats=useMemo(()=>{const map=new Map<string,number[]>();for(const r of ratings){const key=r.song.genre||'Unknown';map.set(key,[...(map.get(key)||[]),r.score])}return [...map].map(([name,scores])=>({name,count:scores.length,avg:scores.reduce((a,b)=>a+b,0)/scores.length})).sort((a,b)=>b.avg-a.avg)},[ratings]);
   const collection = ratings.filter(rating =>
     (collectionFilter === 'all' || (rating.song.kind || 'track') === collectionFilter) &&
     (!onlyFavourites || rating.favourite) &&
+    (shelf==='All records'||(shelves[shelf]||[]).includes(songKey(rating.song))) &&
     [rating.song.title, rating.song.artist, rating.song.album, rating.note].join(' ').toLowerCase().includes(collectionQuery.trim().toLowerCase())
   ).sort((a, b) => {
     if (sort === 'highest') return b.score - a.score;
     if (sort === 'lowest') return a.score - b.score;
     if (sort === 'title') return a.song.title.localeCompare(b.song.title);
     if (sort === 'artist') return a.song.artist.localeCompare(b.song.artist);
+    if (sort === 'year') return b.song.year.localeCompare(a.song.year);
     return b.updatedAt.localeCompare(a.updatedAt);
   });
   const selectedAlbum = selected && selected.kind !== 'album' ? albumFor(selected) : undefined;
@@ -452,11 +490,13 @@ export default function Sleeve() {
 
   return <div className="app-shell">
     <header className="topbar">
-      <button className="brand" onClick={() => navigate('discover')}><span><Disc3 size={22}/></span>Sleeve</button>
+      <button className="brand" onClick={() => navigate('home')}><span><Disc3 size={22}/></span>Sleeve</button>
       <nav aria-label="Main navigation">
-        <button aria-current={view === 'discover' ? 'page' : undefined} onClick={() => navigate('discover')}><Disc3 size={17}/> <span>Discover</span></button>
-        <button aria-current={view === 'random' ? 'page' : undefined} onClick={() => navigate('random')}><Shuffle size={17}/> <span>Random song</span></button>
-        <button aria-current={view === 'collection' ? 'page' : undefined} onClick={() => navigate('collection')}><Library size={17}/> <span>My collection</span></button>
+        <button aria-current={view==='home'?'page':undefined} onClick={()=>navigate('home')}><Disc3 size={17}/><span>Home</span></button>
+        <button aria-current={view === 'discover'||view==='random' ? 'page' : undefined} onClick={() => navigate('discover')}><Shuffle size={17}/> <span>Discover</span></button>
+        <button aria-current={view==='search'?'page':undefined} onClick={()=>navigate('search')}><Search size={17}/><span>Search</span></button>
+        <button aria-current={view === 'collection' ? 'page' : undefined} onClick={() => navigate('collection')}><Library size={17}/> <span>Collection</span></button>
+        <button aria-current={view==='insights'?'page':undefined} onClick={()=>navigate('insights')}><Star size={17}/><span>Insights</span></button>
       </nav>
       <button className="icon-button theme" onClick={() => setDark(!dark)} aria-label={dark ? 'Use light theme' : 'Use dark theme'}>
         {dark ? <Sun size={19}/> : <Moon size={19}/>}
@@ -465,12 +505,12 @@ export default function Sleeve() {
 
     <main>
       {storageError && <p className="status" role="alert">{storageError}</p>}
-      {view === 'discover' && <>
-        {!searching && <section className="hero">
+      {(view === 'discover'||view==='home'||view==='search') && <>
+        {view==='home' && <section className="hero editorial-hero">
           <div className="hero-copy">
-            <h1>Good music.<br/>Your take.</h1>
-            <p>Find your next favourite. Rate songs and albums, and keep a record of what you love.</p>
-            <button className="primary" onClick={() => searchRef.current?.focus()}>Start rating <ArrowRight size={18}/></button>
+            <small className="eyebrow">THE DAILY RECORD · YOUR MUSIC JOURNAL</small><h1>Music worth<br/>remembering.</h1>
+            <p>Discover the unexpected. Make up your own mind. Keep your listening history on record.</p>
+            <button className="primary" onClick={() => navigate('discover')}>Explore music</button>
           </div>
           {featured && <article className="hero-record">
             <button type="button" className="record-disc" onClick={() => openRating(featured)}
@@ -492,7 +532,9 @@ export default function Sleeve() {
           </article>}
         </section>}
 
-        <section className="find-section" aria-label="Find music">
+        {view==='discover'&&<><div className="page-heading"><div><p className="eyebrow">THE LISTENING ROOM</p><h1>Find your next favourite.</h1></div><button className="primary" onClick={()=>{navigate('random');if(!history.length)void roll()}}><Shuffle size={18}/> Random song</button></div><div className="editorial-categories">{discoverySections.map(([title,caption,g])=><button key={title} onClick={()=>{setGenre(g);setSearch({term:'',revision:0});setQuery('');document.getElementById('discovery-results')?.scrollIntoView({behavior:'smooth'})}}><small>{caption}</small><strong>{title}</strong></button>)}</div></>}
+        {view==='search'&&<section className="find-section" aria-label="Find music">
+          <div className="page-heading"><h1>Search music</h1></div>
           <form className="search-bar" onSubmit={submitSearch}>
             <div className="query-field">
               <Search size={20}/>
@@ -505,17 +547,15 @@ export default function Sleeve() {
             <KindSwitch value={kind} onChange={value => setKind(value as Kind)}/>
             <div className="platforms">
               <button className="primary" disabled={spotifyLoading} type="submit">
-                {spotifyLoading ? 'Loading…' : spotifyLink ? 'Rate Spotify link' : 'Search Apple Music'}
+                {spotifyLoading ? 'Loading…' : spotifyLink ? 'Rate Spotify link' : 'Search'}
               </button>
-              {!spotifyLink && <a className="spotify-button" href={spotifySearch(query.trim() || search.term)} target="_blank" rel="noreferrer">
-                Spotify <ArrowUpRight size={15}/>
-              </a>}
             </div>
           </form>
           {spotifyError && <p role="alert">{spotifyError}</p>}
-        </section>
+          {!query&&recentSearches.length>0&&<div className="genre-list">{recentSearches.map(term=><button key={term} onClick={()=>setQuery(term)}>{term}</button>)}</div>}
+        </section>}
 
-        {!searching && <section className="album-shelf" aria-labelledby="shelf-heading">
+        {view==='home' && <section className="album-shelf" aria-labelledby="shelf-heading">
           <div className="section-heading"><h2 id="shelf-heading">{chart.length ? 'Trending albums' : 'Albums in the spotlight'}</h2>
             {chart.length > 0 && <small>Apple Music · US</small>}</div>
           <div className="shelf-grid">{albumShelf.map((album, index) =>
@@ -525,7 +565,7 @@ export default function Sleeve() {
             </button>)}</div>
         </section>}
 
-        <section className="results" aria-labelledby="discovery-results">
+        {view!=='search'||searching?<section className="results" aria-labelledby="discovery-results">
           <div className="section-heading">
             <h2 id="discovery-results">{searching ? 'Results for “' + search.term + '”' : kind === 'album' ? 'Albums to explore' : 'In rotation'}</h2>
             {!searching && <button className="secondary" disabled={browse.current?.pending} onClick={() => void browse.advance()}>
@@ -544,7 +584,7 @@ export default function Sleeve() {
             displayed.length === 0 ? <p className="status">No {kind === 'album' ? 'albums' : 'songs'} found. Try a different title or artist.</p> :
             <div className="music-grid">
               {displayed.map(song => {
-                const rating = findRating(song);
+                const rating = ratingMap.get(songKey(song));
                 return <button className="music-card" key={songKey(song)} onClick={() => openRating(song)}>
                   <div className="card-media"><Artwork song={song}/><span className="card-rating">
                     {rating ? rating.score.toFixed(1) : <Plus size={20}/>}
@@ -554,14 +594,14 @@ export default function Sleeve() {
               })}
             </div>}
           {!searching && displayed.length > 0 && <div className="feed-more"><button className="secondary" disabled={browse.current?.pending} onClick={() => void browse.advance(genre, true)}>{browse.current?.pending ? "Finding more…" : "Load more music"}</button></div>}
-        </section>
+        </section>:null}
       </>}
 
       {view === 'random' && <section className="random-page">
         <div className="page-heading">
           <h1>Random song</h1>
           <div className="random-controls">
-            <select aria-label="Random song genre" value={randomGenre} onChange={event => roll(event.target.value)}>
+            <select aria-label="Discovery mode" value={discoveryMode} onChange={e=>setDiscoveryMode(e.target.value)}><option>Any music</option><option>Unfamiliar genres</option></select><select aria-label="Random song genre" value={randomGenre} onChange={event => void roll(event.target.value)}>
               {genres.map(item => <option key={item}>{item}</option>)}
             </select>
             <button className="primary" disabled={random.current?.pending} onClick={() => roll()}>
@@ -571,7 +611,7 @@ export default function Sleeve() {
         </div>
         {random.current?.unavailable && <p className="status" role="status">Couldn’t load a new song. Try again in a moment.</p>}
         {randomSong && <article className="random-card" key={songKey(randomSong)}>
-          <Artwork song={randomSong} eager/>
+          <div className="big-vinyl"><div className="vinyl-center"><Artwork song={randomSong} eager/></div></div>
           <div className="random-details" aria-live="polite">
             <h2>{randomSong.title}</h2>
             <dl>
@@ -582,6 +622,7 @@ export default function Sleeve() {
               <div><dt>Duration</dt><dd>{randomSong.duration ? formatDuration(randomSong.duration) : '—'}</dd></div>
             </dl>
             <div className="actions">
+              <button className="secondary" onClick={()=>setPreviewSong(randomSong)}>Preview</button>
               <button className="primary" onClick={() => openRating(randomSong)}>Rate song <Plus size={18}/></button>
               {randomSong.url && <a className="secondary" href={randomSong.url} target="_blank" rel="noreferrer">Apple Music <ArrowUpRight size={16}/></a>}
               <a className="spotify-button" href={spotifySearch(randomSong.title + ' ' + randomSong.artist)} target="_blank" rel="noreferrer">
@@ -590,6 +631,7 @@ export default function Sleeve() {
             </div>
           </div>
         </article>}
+        <div className="section-heading"><h2>Discovery history</h2><small>{history.length} discoveries · saved on this device</small></div><div className="history-strip">{history.slice(0,30).map((song,i)=><button className="secondary" key={songKey(song)} aria-pressed={historyIndex===i} onClick={()=>setHistoryIndex(i)}>{song.title} · {song.artist}</button>)}</div>
       </section>}
 
       {view === 'collection' && <section className="collection-page">
@@ -612,14 +654,15 @@ export default function Sleeve() {
           <input type="search" placeholder="Search collection" aria-label="Search collection" value={collectionQuery} onChange={event => setCollectionQuery(event.target.value)}/>
           <select aria-label="Sort collection" value={sort} onChange={event => setSort(event.target.value)}>
             <option value="recent">Recently rated</option><option value="highest">Highest rated</option>
-            <option value="lowest">Lowest rated</option><option value="title">Title A–Z</option><option value="artist">Artist A–Z</option>
+            <option value="lowest">Lowest rated</option><option value="title">Title A–Z</option><option value="artist">Artist A–Z</option><option value="year">Release year</option>
           </select>
           <button className="secondary" aria-pressed={onlyFavourites} onClick={() => setOnlyFavourites(!onlyFavourites)}>
             <Heart size={16} fill={onlyFavourites ? 'currentColor' : 'none'}/> Favourites
           </button>
         </div>
-        {collection.length ? <div className="rating-list">
-          {collection.map(rating => <button key={songKey(rating.song)} className="rating-row" onClick={() => openRating(rating.song)}>
+        <div className="section-heading"><div className="genre-list">{['All records',...Object.keys(shelves)].map(name=><button key={name} aria-pressed={shelf===name} onClick={()=>setShelf(name)}>{name}</button>)}<button onClick={()=>{const name=prompt('Name your collection')?.trim();if(name&&name!=='All records'&&!Object.hasOwn(shelves,name)){const next={...shelves,[name]:[]};setShelves(next);remember('sleeve.shelves.v1',next);setShelf(name)}}}>+ Shelf</button></div><button className="secondary" onClick={()=>setGrid(!grid)}>{grid?'List view':'Grid view'}</button></div>
+        {collection.length ? <div className={grid?'shelf-grid personal-grid':'rating-list'}>
+          {collection.slice(0,limit).map(rating => <button key={songKey(rating.song)} className={grid?'shelf-card':'rating-row'} onClick={() => openRating(rating.song)}>
             <Artwork song={rating.song}/>
             <span><b>{rating.song.title}</b><small>{rating.song.artist && rating.song.artist + ' · '}{rating.song.kind === 'album' ? 'Album' : 'Song'}</small>
               {rating.note && <small className="review-note">{rating.note}</small>}</span>
@@ -630,8 +673,10 @@ export default function Sleeve() {
           <p>{ratings.length ? 'No ratings match those filters.' : 'Rate a song or album to start your collection.'}</p>
           {!ratings.length && <button className="secondary" onClick={() => navigate('discover')}>Discover music <ArrowRight size={17}/></button>}
         </div>}
-        <p className="collection-footer">Your collection is stored on this device.</p>
+        {collection.length>limit&&<button className="secondary" onClick={()=>setLimit(limit+60)}>Load more records</button>}
+        <p className="collection-footer">Your history stays on this device. Clearing browser data can remove your ratings and shelves. Export a backup regularly.</p>
       </section>}
+      {view==='insights'&&<section className="insights-page"><p className="eyebrow">YOUR LISTENING PROFILE</p><h1>On the record.</h1><div className="collection-stats"><div><b>{ratings.length}</b><span>Records rated</span></div><div><b>{ratings.length?(ratings.reduce((s,r)=>s+r.score,0)/ratings.length).toFixed(1):'—'}</b><span>Average score</span></div><div><b>{genreStats.length}</b><span>Genres explored</span></div></div><h2>Your highest-rated genres</h2>{genreStats.length?genreStats.slice(0,12).map(g=><div className="insight-bar" key={g.name}><span>{g.name}<small>{g.count} rated</small></span><div><i style={{width:g.avg*10+'%'}}/></div><b>{g.avg.toFixed(1)}</b></div>):<p className="status">Rate a few songs to start seeing your musical taste.</p>}<h2>Highest rated records</h2><div className="shelf-grid">{[...ratings].sort((a,b)=>b.score-a.score).slice(0,8).map(r=><button className="shelf-card" key={songKey(r.song)} onClick={()=>openRating(r.song)}><Artwork song={r.song}/><b>{r.song.title}</b><small>{r.song.artist} · {r.score.toFixed(1)}</small></button>)}</div></section>}
     </main>
 
     <dialog ref={dialogRef} aria-labelledby="rating-title" onCancel={() => setSelected(null)}
@@ -644,6 +689,7 @@ export default function Sleeve() {
           <p>{selected.artist}{selected.kind !== 'album' && selected.album ? ' · ' + selected.album : ''}</p>
         </div></div>
         <div className="dialog-links">
+          <small>{[selected.genre,selected.year,selected.duration?formatDuration(selected.duration):''].filter(Boolean).join(' · ')}</small>
           {selected.url && <a href={selected.url} target="_blank" rel="noreferrer">{selected.source === 'spotify' ? 'Spotify' : 'Apple Music'} <ArrowUpRight size={14}/></a>}
           {selected.source !== 'spotify' && <a href={spotifySearch(selected.title + ' ' + selected.artist)} target="_blank" rel="noreferrer">Spotify <ArrowUpRight size={14}/></a>}
           {selectedAlbum && <button type="button" onClick={() => openRating(selectedAlbum)}>Rate the album <ArrowRight size={14}/></button>}
@@ -653,6 +699,7 @@ export default function Sleeve() {
           <input value={selected.artist} maxLength={250} onChange={event => setSelected({ ...selected, artist: event.target.value })}/>
         </label>}
         <TrackPreview key={"preview:"+songKey(selected)} song={selected}/>
+        {Object.keys(shelves).length>0&&<label className="context-field"><span>Add to a shelf</span><select value="" onChange={e=>{const name=e.target.value;if(!name)return;const key=songKey(selected);const next={...shelves,[name]:[...new Set([...shelves[name],key])]};setShelves(next);remember('sleeve.shelves.v1',next);setToast('Added to '+name+'. Save rating to keep this record.')}}><option value="">Choose shelf</option>{Object.keys(shelves).map(name=><option key={name}>{name}</option>)}</select></label>}
         <RatingScale key={"scale:"+songKey(selected)} score={score} onChange={setScore} previous={findRating(selected)?.score === score ? findRating(selected)?.previousScore : findRating(selected)?.score}/>
         <RatingDetails key={"details:"+songKey(selected)} song={selected} tags={tags} setTags={setTags} context={context} setContext={setContext}/>
         <label className="note-label" htmlFor="rating-note">Listening notes <span>Optional</span></label>
@@ -665,8 +712,10 @@ export default function Sleeve() {
         </div>
       </form>}
     </dialog>
+    {previewSong&&<aside className="persistent-player"><TrackPreview key={songKey(previewSong)} song={previewSong}/><button className="icon-button" aria-label="Close player" onClick={()=>setPreviewSong(null)}><X size={18}/></button></aside>}
     {toast && <div className="toast" role="status">{toast}{undo && <button type="button" onClick={() => {
       if (updateCollection(previous => mergeRatings(previous, [undo]))) { setUndo(null); setToast('Rating restored.'); }
     }}>Undo</button>}</div>}
   </div>;
 }
+
