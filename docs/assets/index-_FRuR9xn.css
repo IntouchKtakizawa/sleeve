@@ -35,3 +35,40 @@ dialog::backdrop{background:#050807c9;backdrop-filter:blur(12px);animation:sleev
 .dialog-actions .primary{border-radius:14px;min-height:52px;font-size:16px}
 .dialog-actions .icon-button{width:52px;height:52px;border-radius:14px}
 @media(max-width:650px){.music-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.rating-scale{padding:12px}.score-steps{gap:3px}.score-steps button{height:36px;font-size:12px}.dialog-song{gap:12px}.rating-dialog{padding:18px}.score-readout strong{font-size:12px}}
+
+/* Sleeve rating experience v3 */
+.rating-dialog{background:linear-gradient(155deg,rgba(var(--cover-tint,110,125,115),.15),transparent 48%),var(--surface);padding:clamp(18px,4vw,32px)}
+.dialog-song .artwork{width:clamp(72px,15vw,115px)}
+.dialog-links{margin:15px 0 17px}
+.dialog-links :is(a,button){color:var(--muted)}
+.new-scale{padding:20px 18px 12px;background:color-mix(in srgb,var(--score-color) 5%,var(--surface));border:1px solid var(--line);border-radius:20px}
+.new-scale .score-readout{align-items:center;margin:0 0 17px}
+.score-value{display:flex;align-items:baseline;gap:5px;min-width:0}
+.score-value input{width:3.4ch;min-width:0;background:transparent;border:0;color:var(--score-color);font-weight:800;font-size:clamp(48px,8vw,70px);line-height:1.1;padding:0;letter-spacing:-.065em;font-variant-numeric:tabular-nums}
+.score-value input:hover{border-bottom:1px dashed var(--score-color)}
+.score-value span{color:var(--muted);font-size:16px}
+.score-caption{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.score-caption strong{color:var(--score-color);font-size:13px;white-space:nowrap}
+.score-caption small{font-size:12px;font-variant-numeric:tabular-nums;color:var(--muted);padding:3px 8px;border-radius:99px;background:var(--raised)}
+.scrub-row{display:grid;grid-template-columns:38px minmax(0,1fr) 38px;align-items:start;gap:10px}
+.scrub-row>.icon-button{width:38px;height:50px;border-radius:12px;border-color:var(--line);background:var(--surface)}
+.scrub-wrap{position:relative;min-width:0}
+.scrub-wrap input{appearance:none;-webkit-appearance:none;display:block;width:100%;height:50px;border:0;border-radius:12px;background:linear-gradient(to right,color-mix(in srgb,var(--score-color) 65%,var(--surface)) var(--score-fill),var(--raised) var(--score-fill));margin:0;cursor:ew-resize;touch-action:pan-y}
+.scrub-wrap input::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:5px;height:38px;border-radius:5px;background:var(--text);box-shadow:0 0 12px #0005;position:relative}
+.scrub-wrap input::-moz-range-thumb{width:5px;height:38px;border:0;border-radius:5px;background:var(--text)}
+.scrub-marks{display:flex;justify-content:space-between;align-items:center;position:absolute;top:0;left:3px;right:3px;height:50px;pointer-events:none}
+.scrub-marks i{height:8px;width:1px;background:var(--text);opacity:.28}
+.scrub-marks i.major{height:17px;opacity:.5}
+.scrub-labels{display:flex;justify-content:space-between;padding-top:7px;color:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}
+.extra-heading,.context-field>span{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:650;font-size:14px}
+.extra-heading small,.context-field small{color:var(--muted);font-size:12px;font-weight:400}
+.rating-extras{margin-top:20px}
+.vibe-tags{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 16px}
+.vibe-tags button{background:var(--raised);border:1px solid var(--line);border-radius:999px;padding:8px 12px;font-size:12px;color:var(--muted);transition:background .15s,color .15s,border-color .15s}
+.vibe-tags button:hover{color:var(--text);border-color:var(--muted)}
+.vibe-tags button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.context-field{display:grid;gap:7px}
+.context-field input{width:100%;background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:12px;color:var(--text);font-size:14px}
+.rating-dialog .note-label{margin-top:16px}
+.rating-dialog textarea{min-height:70px}
+@media(max-width:650px){.new-scale{padding:14px 10px 10px}.scrub-row{grid-template-columns:32px minmax(0,1fr) 32px;gap:7px}.scrub-row>.icon-button{width:32px}.score-caption strong{font-size:11px;padding:5px 7px}.score-value input{font-size:48px}.vibe-tags button{font-size:12px;padding:7px 10px}}

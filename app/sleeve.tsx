@@ -47,33 +47,49 @@ function formatDuration(milliseconds: number) {
   return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
 }
 
-function RatingScale({ score, onChange }: { score: number; onChange: (value: number) => void }) {
-  const [hovered, setHovered] = useState<number | null>(null);
-  const display = hovered ?? score;
-  const description = display >= 9 ? 'All-time favourite' : display >= 8 ? 'On repeat' :
-    display >= 7 ? 'Really good' : display >= 5 ? 'Has its moments' : display >= 3 ? 'Not for me' : 'A skip';
-  const hue = Math.round(8 + display * 13);
-  const adjust = (step: number) => onChange(Math.max(0, Math.min(10, Math.round((score + step) * 10) / 10)));
-  return <div className="rating-scale" style={{ '--score-hue': hue } as CSSProperties}>
-    <div className="score-readout">
-      <output htmlFor="rating-range" aria-label="Rating preview"><b>{display.toFixed(1)}</b><span>/ 10</span></output>
-      <strong>{description}</strong>
-    </div>
-    <div className="score-steps" aria-label="Quick scores" onPointerLeave={() => setHovered(null)}>
-      {Array.from({ length: 11 }, (_, value) => <button key={value} type="button"
-        className={value <= display ? 'filled' : ''} aria-label={'Rate ' + value + ' out of 10'}
-        aria-pressed={score === value} onPointerEnter={event => { if (event.pointerType === 'mouse') setHovered(value); }}
-        onClick={() => { onChange(value); setHovered(null); }}>{value}</button>)}
-    </div>
-    <div className="fine-score">
-      <button type="button" className="icon-button" aria-label="Decrease rating by 0.1" onClick={() => adjust(-0.1)}><Minus size={16}/></button>
-      <input id="rating-range" type="range" aria-label="Fine-tune rating" min={0} max={10} step={0.1}
-        value={score} onChange={event => onChange(Number(event.target.value))} />
-      <button type="button" className="icon-button" aria-label="Increase rating by 0.1" onClick={() => adjust(0.1)}><Plus size={16}/></button>
-    </div>
+
+const vibeOptions = ['Great Mix', 'Heavy Bass', 'Catchy Hook', 'Repeat Worthy', 'Grower', 'Late Night', 'Great Vocals', 'Atmospheric'];
+function ratingTier(score: number) {
+  return score >= 9 ? ['#f4d578', 'Masterpiece · No skips'] : score >= 8 ? ['#b7ed79', 'Heavy rotation'] :
+    score >= 7 ? ['#a3e0a7', 'Solid · Grew on me'] : score >= 5 ? ['#e3b66d', 'Mid'] :
+    score >= 3 ? ['#e28f65', 'Not my vibe'] : ['#e07979', 'Skip'];
+}
+function RatingScale({ score, onChange, previous }: { score: number; onChange: (value: number) => void; previous?: number }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [color, label] = ratingTier(score);
+  const clamp = (value: number) => Math.max(0, Math.min(10, Math.round(value * 10) / 10));
+  function commit() {
+    if (draft !== null && draft.trim() && Number.isFinite(Number(draft))) onChange(clamp(Number(draft)));
+    setDraft(null);
+  }
+  return <div className="rating-scale new-scale" style={{ '--score-color': color, '--score-fill': score * 10 + '%' } as CSSProperties}>
+    <div className="score-readout"><div className="score-value"><input aria-label="Type rating out of ten" inputMode="decimal" value={draft ?? score.toFixed(1)}
+      onFocus={e => { setDraft(score.toFixed(1)); e.target.select(); }} onChange={e => setDraft(e.target.value)} onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}/><span>/ 10</span></div>
+      <div className="score-caption"><strong>{label}</strong>{previous !== undefined && previous !== score && <small>{previous.toFixed(1)} → {score.toFixed(1)}</small>}</div></div>
+    <div className="scrub-row"><button type="button" className="icon-button" aria-label="Decrease rating by 0.1" onClick={() => onChange(clamp(score - .1))}><Minus size={18}/></button>
+      <div className="scrub-wrap"><input id="rating-range" type="range" min={0} max={10} step={0.1} value={score} aria-label="Scrub rating" onChange={e => onChange(Number(e.target.value))}/>
+      <div className="scrub-marks" aria-hidden="true">{Array.from({length:21},(_,i)=><i key={i} className={i%2===0?'major':''}/>)}</div>
+      <div className="scrub-labels" aria-hidden="true">{Array.from({length:11},(_,i)=><span key={i}>{i}</span>)}</div></div>
+      <button type="button" className="icon-button" aria-label="Increase rating by 0.1" onClick={() => onChange(clamp(score + .1))}><Plus size={18}/></button></div>
   </div>;
 }
-
+function RatingDetails({song,tags,setTags,context,setContext}:{song:Song;tags:string[];setTags:(v:string[])=>void;context:string;setContext:(v:string)=>void}) {
+  const [tracks,setTracks]=useState<string[]>([]);
+  const album=song.kind==='album';
+  useEffect(()=>{setTracks([]); if(!album||song.source==='spotify'||typeof song.id!=='number')return;
+    const controller=new AbortController();fetch('https://itunes.apple.com/lookup?id='+song.id+'&entity=song',{signal:controller.signal})
+      .then(r=>r.ok?r.json():null).then(data=>{if(!controller.signal.aborted&&data)setTracks([...new Set<string>((data.results||[]).filter((x:{wrapperType:string;trackName?:string})=>x.wrapperType==='track'&&x.trackName).map((x:{trackName:string})=>x.trackName))]);}).catch(()=>{});
+    return ()=>controller.abort();},[song.id,album,song.source]);
+  return <div className="rating-extras"><div className="extra-heading">What stood out? <small>Optional</small></div><div className="vibe-tags">{vibeOptions.map(tag=><button key={tag} type="button" aria-pressed={tags.includes(tag)} onClick={()=>setTags(tags.includes(tag)?tags.filter(x=>x!==tag):[...tags,tag])}>{tags.includes(tag)?'✓ ':''}{tag}</button>)}</div>
+    <label className="context-field"><span>{album?'Favourite track':'Peak moment'} <small>Optional</small></span><input value={context} onChange={e=>setContext(e.target.value)} maxLength={120} placeholder={album?'Choose or type a track':'e.g. 2:34 — guitar solo'} list={album?'album-track-options':undefined}/></label>
+    {album&&<datalist id="album-track-options">{tracks.map(t=><option key={t} value={t}/>)}</datalist>}</div>;
+}
+function useCoverTint(art?: string) {
+  const [tint,setTint]=useState('110,125,115');
+  useEffect(()=>{let active=true;setTint('110,125,115');if(!art)return;
+    const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{if(!active)return;try{const canvas=document.createElement('canvas');canvas.width=canvas.height=24;const ctx=canvas.getContext('2d');if(!ctx)return;ctx.drawImage(img,0,0,24,24);const pixels=ctx.getImageData(0,0,24,24).data;let r=0,g=0,b=0,w=0;for(let i=0;i<pixels.length;i+=4){const max=Math.max(pixels[i],pixels[i+1],pixels[i+2]),min=Math.min(pixels[i],pixels[i+1],pixels[i+2]);const weight=(max-min+15)*(max>30&&max<245?1:.15);r+=pixels[i]*weight;g+=pixels[i+1]*weight;b+=pixels[i+2]*weight;w+=weight;}if(w)setTint([r,g,b].map(v=>Math.round(v/w)).join(','));}catch{}};img.src=art;return()=>{active=false;};},[art]);return tint;
+}
 function sleeveEntry(dialog: HTMLDialogElement | null) {
   if (!dialog || dialog.open || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const rect = document.activeElement?.getBoundingClientRect();
@@ -153,6 +169,9 @@ export default function Sleeve() {
   const [score, setScore] = useState(7.5);
   const [note, setNote] = useState('');
   const [favourite, setFavourite] = useState(false);
+  const [tags,setTags]=useState<string[]>([]);
+  const [context,setContext]=useState('');
+  const coverTint=useCoverTint(selected?.art);
   const [genre, setGenre] = useState(genres[0]);
   const [randomGenre, setRandomGenre] = useState(genres[0]);
   const [kind, setKind] = useState<Kind>('track');
@@ -306,6 +325,7 @@ export default function Sleeve() {
     setScore(rating?.score ?? 7.5);
     setNote(rating?.note ?? '');
     setFavourite(rating?.favourite ?? false);
+    setTags(rating?.tags ?? []);setContext(rating?.context ?? '');
     setSelected(song);
   }
 
@@ -325,7 +345,7 @@ export default function Sleeve() {
   function saveRating(event: FormEvent) {
     event.preventDefault();
     if (!selected || !ready) return;
-    const rating: Rating = { trackId: selected.id, song: selected, score, note, favourite, updatedAt: new Date().toISOString() };
+    const rating: Rating = { trackId: selected.id, song: selected, score, note, favourite, tags, context, previousScore: findRating(selected)?.score !== score ? findRating(selected)?.score : findRating(selected)?.previousScore, updatedAt: new Date().toISOString() };
     if (updateCollection(previous => mergeRatings(previous, [rating]))) {
       setSelected(null);
       setUndo(null);
@@ -572,7 +592,7 @@ export default function Sleeve() {
 
     <dialog ref={dialogRef} aria-labelledby="rating-title" onCancel={() => setSelected(null)}
       onClick={event => { if (event.target === event.currentTarget) setSelected(null); }}>
-      {selected && <form className="rating-dialog" onSubmit={saveRating}>
+      {selected && <form className="rating-dialog" style={{ "--cover-tint":coverTint } as CSSProperties} onSubmit={saveRating}>
         <button type="button" className="icon-button close-dialog" aria-label="Close rating" onClick={() => setSelected(null)}><X size={22}/></button>
         <div className="dialog-song"><Artwork song={selected} eager/><div>
           <span className="type-label">{selected.kind === 'album' ? 'Album rating' : 'Song rating'}</span>
@@ -588,7 +608,8 @@ export default function Sleeve() {
           <span>Artist <small>Optional</small></span>
           <input value={selected.artist} maxLength={250} onChange={event => setSelected({ ...selected, artist: event.target.value })}/>
         </label>}
-        <RatingScale key={songKey(selected)} score={score} onChange={setScore}/>
+        <RatingScale key={songKey(selected)} score={score} onChange={setScore} previous={findRating(selected)?.score === score ? findRating(selected)?.previousScore : findRating(selected)?.score}/>
+        <RatingDetails key={songKey(selected)} song={selected} tags={tags} setTags={setTags} context={context} setContext={setContext}/>
         <label className="note-label" htmlFor="rating-note">Listening notes <span>Optional</span></label>
         <textarea id="rating-note" value={note} maxLength={1000} placeholder="What stood out to you?" onChange={event => setNote(event.target.value)}/>
         <div className="dialog-actions">

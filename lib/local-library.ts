@@ -20,7 +20,7 @@ export function songKey(song: Song) {
   return (song.kind || 'track') + ':' + song.id;
 }
 
-export type Rating = { trackId: Song['id']; song: Song; score: number; note: string; updatedAt: string; favourite?: boolean };
+export type Rating = { trackId: Song['id']; song: Song; score: number; note: string; updatedAt: string; favourite?: boolean; tags?: string[]; context?: string; previousScore?: number };
 export const STORAGE_KEY = 'sleeve.library.v1';
 
 function fail(): never {
@@ -68,6 +68,9 @@ export function validateRatings(value: unknown): Rating[] {
     return {
       trackId: song.id, song, score: Math.round(rating.score * 10) / 10, note: rating.note,
       updatedAt: new Date(rating.updatedAt).toISOString(), favourite: rating.favourite === true,
+      ...(Array.isArray(rating.tags) && {tags: [...new Set<string>(rating.tags.filter((v:unknown): v is string => typeof v === 'string').map((v:string)=>v.slice(0,40)))].slice(0,20)}),
+      ...(typeof rating.context === 'string' && {context: rating.context.slice(0,120)}),
+      ...(typeof rating.previousScore === 'number' && Number.isFinite(rating.previousScore) && rating.previousScore >= 0 && rating.previousScore <= 10 && {previousScore: Math.round(rating.previousScore*10)/10}),
     };
   });
 }
