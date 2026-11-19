@@ -495,3 +495,23 @@ dialog::backdrop{background:#050807c9;backdrop-filter:blur(12px);animation:sleev
   .persistent-player .preview-player{padding:13px 42px 13px 12px}
   .preview-toggle{padding:0 10px;min-height:34px}
 }
+
+/* Featured vinyl carousel — perspective belongs to the outer slot; rotation belongs to the disc. */
+.hero .vinyl-carousel{width:min(100% - 16px,520px);min-width:0;display:grid;grid-template-columns:minmax(0,1fr);justify-items:center;gap:9px;margin:20px 0 24px;align-self:center}
+.vinyl-stage{position:relative;width:100%;height:clamp(180px,23vw,300px);perspective:850px;isolation:isolate}
+.vinyl-slot{position:absolute;top:50%;left:50%;width:clamp(125px,22vw,270px);aspect-ratio:1;border:0;border-radius:50%;padding:0;background:none;transform-style:preserve-3d;transform:translate(-50%,-50%) translate3d(var(--x),var(--y),var(--z)) rotateY(var(--tilt)) scale(var(--scale));opacity:var(--opacity);z-index:var(--layer);transition:transform .8s cubic-bezier(.22,1,.36,1),opacity .55s ease;cursor:pointer}
+.vinyl-slot[data-position="0"]{--x:0%;--y:0%;--z:50px;--tilt:0deg;--scale:1;--opacity:1;--layer:5}
+.vinyl-slot[data-position="-1"]{--x:-52%;--y:0%;--z:-35px;--tilt:27deg;--scale:.74;--opacity:.92;--layer:4}
+.vinyl-slot[data-position="1"]{--x:52%;--y:0%;--z:-35px;--tilt:-27deg;--scale:.74;--opacity:.92;--layer:4}
+.vinyl-slot[data-position="-2"]{--x:-72%;--y:-20%;--z:-130px;--tilt:43deg;--scale:.55;--opacity:.62;--layer:2}
+.vinyl-slot[data-position="2"]{--x:72%;--y:-20%;--z:-130px;--tilt:-43deg;--scale:.55;--opacity:.62;--layer:2}
+.vinyl-slot .record-disc{display:grid;width:100%;height:100%;animation:vinyl-spin 9s linear infinite;box-shadow:0 12px 24px #14291c88,inset 0 0 0 4px #111512}
+.vinyl-carousel[data-paused="true"] .record-disc,.vinyl-carousel:hover .record-disc{animation-play-state:paused}
+.vinyl-slot:focus-visible{outline:2px solid #243c26;outline-offset:5px}
+.vinyl-carousel .record-info{width:min(100%,310px)}
+.vinyl-controls{display:flex;align-items:center;justify-content:center;gap:8px;color:#253927;width:min(100%,310px)}
+.vinyl-controls span{font-size:9px;letter-spacing:.13em;font-weight:800;flex:1;text-align:center;white-space:nowrap}
+.vinyl-controls button{width:34px;height:32px;display:grid;place-items:center;color:#253927;background:#25392713;border:1px solid #25392730;border-radius:999px;font-size:20px;line-height:1}
+.vinyl-controls button:hover,.vinyl-controls button[aria-pressed=true]{color:#eaffc5;background:#253927}
+@media(max-width:650px){.hero .vinyl-carousel{width:calc(100% - 28px);margin:8px 0 20px}.vinyl-stage{height:clamp(184px,55vw,260px)}.vinyl-slot{width:clamp(130px,49vw,230px)}}
+@media(prefers-reduced-motion:reduce){.vinyl-slot,.vinyl-slot .record-disc{transition:none!important;animation:none!important}}
