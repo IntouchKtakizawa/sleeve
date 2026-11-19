@@ -12,7 +12,6 @@ const views = ['home', 'discover', 'search', 'random', 'collection', 'insights']
 type View = typeof views[number];
 type Filter = 'all' | Kind;
 type DiscoveryRound = ReturnType<typeof drawDiscovery> & { pending?: boolean; unavailable?: boolean };
-const featured = discoveryTracks[Math.floor(Date.now()/86400000)%discoveryTracks.length];
 const discoverySections = [
   ['Hidden gems', 'Go beyond the charts', 'Indie'],
   ['Across the decades', 'Find a different era', 'Rock'],
@@ -38,6 +37,54 @@ function Artwork({ song, eager = false }: { song: Song; eager?: boolean }) {
     {song.art && <img key={song.art} src={song.art} alt={artworkTitle(song)} loading={eager ? 'eager' : 'lazy'}
       onError={event => { event.currentTarget.hidden = true; }} />}
   </div>;
+}
+
+
+function VinylCarousel({ openRating, findRating, setScore }: {
+  openRating: (song: Song) => void; findRating: (song: Song) => Rating | undefined; setScore: (score: number) => void;
+}) {
+  const tracks = discoveryTracks;
+  const [index, setIndex] = useState(() => Math.floor(Date.now()/86400000) % tracks.length);
+  const [hover, setHover] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const wrap = (n: number) => (n % tracks.length + tracks.length) % tracks.length;
+  const move = (delta: number) => setIndex(n => wrap(n + delta));
+  useEffect(() => {
+    if (hover || focused || paused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = window.setInterval(() => setIndex(n => (n + 1) % tracks.length), 4800);
+    return () => window.clearInterval(timer);
+  }, [hover, focused, paused, tracks.length]);
+  const song = tracks[index];
+  if (!song) return null;
+  return <article className="hero-record vinyl-carousel" aria-label="Featured record carousel"
+    data-paused={hover || focused || paused}
+    onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+    onFocus={e => { if (e.target.matches(':focus-visible')) setFocused(true); }}
+    onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}>
+    <div className="vinyl-stage">
+      {[-2,-1,0,1,2].map(offset => {
+        const slot = wrap(index + offset), record = tracks[slot];
+        return <button key={slot} type="button" className="vinyl-slot" data-position={offset}
+          aria-label={offset === 0 ? 'Rate ' + record.title : 'Select ' + record.title}
+          onClick={() => offset === 0 ? openRating(record) : move(offset)}>
+          <span className="record-disc"><Artwork song={record} eager /></span>
+        </button>;
+      })}
+    </div>
+    <div className="vinyl-controls">
+      <button type="button" aria-label="Previous record" onClick={() => move(-1)}>‹</button>
+      <button type="button" aria-label={paused ? 'Resume carousel' : 'Pause carousel'} aria-pressed={paused} onClick={() => setPaused(p => !p)}>{paused ? '▶' : 'Ⅱ'}</button>
+      <span>RECORD ROTATION</span>
+      <button type="button" aria-label="Next record" onClick={() => move(1)}>›</button>
+    </div>
+    <div className="record-info">
+      <button className="record-label" onClick={() => openRating(song)}><span><b>{song.title}</b><small>{song.artist}</small></span><ArrowUpRight size={20}/></button>
+      <div className="quick-score" role="group" aria-label="Quick rating">
+        {[2,4,6,8,10].map(value => <button key={value} type="button" aria-label={`Rate ${song.title} ${value} out of 10`} onClick={() => {openRating(song);setScore(value);}}><Star size={18} fill={(findRating(song)?.score ?? 0) >= value ? 'currentColor' : 'none'}/></button>)}
+      </div>
+    </div>
+  </article>;
 }
 
 function KindSwitch({ value, onChange, includeAll = false }: {
@@ -512,24 +559,7 @@ export default function Sleeve() {
             <p>Discover the unexpected. Make up your own mind. Keep your listening history on record.</p>
             <button className="primary" onClick={() => navigate('discover')}>Explore music</button>
           </div>
-          {featured && <article className="hero-record">
-            <button type="button" className="record-disc" onClick={() => openRating(featured)}
-              aria-label={'Rate ' + featured.title + ' by ' + featured.artist}>
-              <Artwork song={featured} eager />
-            </button>
-            <div className="record-info">
-              <button className="record-label" onClick={() => openRating(featured)}>
-                <span><b>{featured.title}</b><small>{featured.artist}</small></span><ArrowUpRight size={20}/>
-              </button>
-              <div className="quick-score" role="group" aria-label="Quick rating">
-                {[2, 4, 6, 8, 10].map(value => <button key={value} type="button"
-                  aria-label={`Rate ${featured.title} ${value} out of 10`}
-                  onClick={() => { openRating(featured); setScore(value); }}>
-                  <Star size={18} fill={(findRating(featured)?.score ?? 0) >= value ? 'currentColor' : 'none'}/>
-                </button>)}
-              </div>
-            </div>
-          </article>}
+          <VinylCarousel openRating={openRating} findRating={findRating} setScore={setScore}/>
         </section>}
 
         {view==='discover'&&<><div className="page-heading"><div><p className="eyebrow">THE LISTENING ROOM</p><h1>Find your next favourite.</h1></div><button className="primary" onClick={()=>{navigate('random');if(!history.length)void roll()}}><Shuffle size={18}/> Random song</button></div><div className="editorial-categories">{discoverySections.map(([title,caption,g])=><button key={title} onClick={()=>{setGenre(g);setSearch({term:'',revision:0});setQuery('');document.getElementById('discovery-results')?.scrollIntoView({behavior:'smooth'})}}><small>{caption}</small><strong>{title}</strong></button>)}</div></>}
