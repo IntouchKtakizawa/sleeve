@@ -406,11 +406,92 @@ dialog::backdrop{background:#050807c9;backdrop-filter:blur(12px);animation:sleev
 @media(prefers-reduced-motion:reduce){.app-shell .big-vinyl,.app-shell .preview-disc{animation:none!important}.music-card .artwork,.shelf-card .artwork{transition:none}}
 
 
-/* Slot-loading vinyl player: only the record rotates, not its housing. */
-.random-card .big-vinyl{width:min(100%,420px);aspect-ratio:1;position:relative;isolation:isolate;display:block;border:0;border-radius:0;background:none;box-shadow:none;animation:none!important}
-.random-card .big-vinyl::before{content:"";position:absolute;top:0;left:7%;width:86%;aspect-ratio:1;border-radius:50%;border:1px solid #565650;background:conic-gradient(from 25deg,#fff0 5%,#d5daca26 16%,#fff0 29%,#fff0 55%,#d5daca20 69%,#fff0 83%),repeating-radial-gradient(circle,#10100f 0 2px,#30302e 3px,#161615 4px 6px);box-shadow:0 10px 30px #0009,inset 0 0 24px #0008;animation:vinyl-spin 8s linear infinite;z-index:0;box-sizing:border-box}
-.random-card .big-vinyl .vinyl-center{position:absolute;width:42%;left:29%;top:22%;aspect-ratio:1;border-radius:50%;overflow:hidden;box-shadow:0 0 0 2px #555;z-index:1;animation:vinyl-spin 8s linear infinite}
+
+/* Side-loading deck — translation is independent from record rotation. */
+.random-card .big-vinyl {
+  width:min(100%,480px); aspect-ratio:1.28; position:relative;
+  isolation:isolate; display:block; border:0; border-radius:0;
+  background:none; box-shadow:none; animation:none!important; overflow:visible;
+  --record-x: 15%; --label-x: 32%; --slide: 0%; --label-slide: 0%;
+}
+.random-card .big-vinyl::before {
+  content:""; position:absolute; top:50%; left:var(--record-x);
+  width:70%; aspect-ratio:1; border-radius:50%; border:1px solid #575951;
+  margin-top:-35%; box-sizing:border-box; z-index:0;
+  background:conic-gradient(from 25deg,#fff0 5%,#d5daca32 16%,#fff0 29%,#fff0 55%,#d5daca22 69%,#fff0 83%),repeating-radial-gradient(circle,#10100f 0 2px,#30302e 3px,#161615 4px 6px);
+  box-shadow:0 12px 32px #0009,inset 0 0 20px #0008;
+  animation:vinyl-spin 8s linear infinite; translate:var(--slide) 0;
+  transition:translate .65s cubic-bezier(.22,1,.36,1);
+}
+.random-card .big-vinyl .vinyl-center {
+  position:absolute; width:36%; left:var(--label-x); top:50%;
+  margin-top:-18%; aspect-ratio:1; overflow:hidden; border-radius:50%;
+  box-shadow:0 0 0 2px #686960; z-index:1;
+  animation:vinyl-spin 8s linear infinite;
+  translate:var(--label-slide) 0;
+  transition:translate .65s cubic-bezier(.22,1,.36,1);
+}
 .random-card .vinyl-center .artwork{border-radius:50%}
-.random-card .big-vinyl::after{content:"S L E E V E   /   33 RPM";position:absolute;inset:43% 0 5%;width:auto;height:auto;aspect-ratio:auto;z-index:2;border:1px solid #77756b;border-radius:10px 10px 16px 16px;display:flex;align-items:flex-end;justify-content:center;padding:0 8px 8%;font:700 clamp(8px,1.1vw,12px)/1.2 system-ui,sans-serif;letter-spacing:.12em;color:#d4d2c6;background:radial-gradient(circle at 12% 66%,#b7d891 0 1.2%,#1c211a 1.5% 2.3%,transparent 2.7%),radial-gradient(circle at 85% 66%,#777 0 1.2%,#292925 1.5% 5%,#67675e 5.2% 5.8%,#161614 6% 6.8%,transparent 7%),linear-gradient(#080908 0 7%,#77766d 7.5% 8.5%,#272824 9% 11%,transparent 12%),repeating-linear-gradient(0deg,#ffffff06 0 1px,transparent 1px 4px),linear-gradient(145deg,#505148,#22231e 65%,#34352f);box-shadow:0 10px 20px #0007,inset 0 1px 0 #bcb9a777,inset 0 -6px 0 #1118;box-sizing:border-box}
-@media(max-width:650px){.random-card .big-vinyl{width:min(100%,320px)}}
-@media(prefers-reduced-motion:reduce){.random-card .big-vinyl::before,.random-card .vinyl-center{animation:none!important}}
+.random-card .big-vinyl::after {
+  content:"SLEEVE / 33 RPM";position:absolute;inset:4% 48% 4% 0;
+  width:auto;height:auto;aspect-ratio:auto;z-index:2;
+  border:1px solid #6a6b60;border-radius:16px 5px 5px 16px;
+  display:flex;align-items:flex-end;justify-content:center;padding:0 8px 11%;
+  font:700 clamp(8px,1vw,11px)/1.2 system-ui,sans-serif;
+  letter-spacing:.16em;color:#d6d7cc;white-space:nowrap;
+  background:
+    radial-gradient(circle at 28% 19%,#c5eea4 0 1.4%,#1a2218 1.8% 3%,transparent 3.5%),
+    radial-gradient(circle at 46% 50%,#888a80 0 2%,#292b26 2.5% 8%,#62645c 8.4% 9%,#171915 9.5% 10.5%,transparent 11%),
+    linear-gradient(90deg,transparent 0 91%,#65685e 91% 92%,#11130f 92.5% 97%,#4c4f45 97% 98%,#1d201b 98%),
+    repeating-linear-gradient(90deg,#ffffff06 0 1px,transparent 1px 4px),
+    linear-gradient(145deg,#45483f,#232620 65%,#30342b);
+  box-shadow:0 14px 30px #0008,inset 1px 1px 0 #bcb9a744,inset -3px 0 0 #1117;
+  box-sizing:border-box;
+}
+@media(hover:hover){.random-card .big-vinyl:hover{--slide:21%;--label-slide:40.8333%}}
+.random-card .big-vinyl:active{--slide:21%;--label-slide:40.8333%}
+@media(max-width:650px){.random-card .big-vinyl{width:min(100%,360px)}}
+@media(prefers-reduced-motion:reduce){.random-card .big-vinyl::before,.random-card .vinyl-center{animation:none!important;transition:none}}
+
+/* Compact, single-surface music preview. */
+.preview-player {
+  padding:18px;gap:15px;border-radius:20px;
+  background:linear-gradient(145deg,color-mix(in srgb,var(--raised) 96%,var(--accent) 4%),var(--surface));
+  border:1px solid var(--line);
+}
+.preview-disc {
+  flex:0 0 66px;width:66px;border-color:#ffffff25;
+  box-shadow:0 5px 18px #0006,inset 0 0 0 4px #1115;
+}
+.preview-main{gap:10px}
+.preview-head>div{gap:3px}
+.preview-head b{font-size:14px;letter-spacing:-.02em}
+.preview-head small{font-size:11px}
+.preview-toggle {
+  min-height:38px; padding:0 15px; border-radius:12px; font-size:12px;
+  box-shadow:0 3px 10px #0002;transition:filter .18s,scale .18s;
+}
+.preview-toggle:active{scale:.96}
+.preview-timeline{gap:10px;font-size:10px}
+.preview-timeline input,.preview-volume input{accent-color:var(--accent);cursor:pointer;margin:0;height:15px}
+.preview-volume {display:flex;align-items:center;gap:9px;color:var(--muted);font-size:11px;font-weight:600}
+.preview-volume input{width:min(108px,45%);height:12px}
+.preview-credit{font-size:11px;opacity:.9}
+.persistent-player {
+  width:min(535px,calc(100% - 36px));padding:0;gap:0;border-radius:20px;
+  border:1px solid color-mix(in srgb,var(--line) 75%,var(--muted));overflow:hidden;
+  box-shadow:0 16px 55px #0007; backdrop-filter:blur(20px);
+}
+.persistent-player .preview-player {border:0;border-radius:0;margin:0;padding:18px 51px 18px 16px}
+.persistent-player>.icon-button {
+  position:absolute;right:10px;top:10px;width:32px;height:32px;
+  display:grid;place-items:center;padding:0;border:0;border-radius:50%;
+  background:transparent;color:var(--muted);
+}
+.persistent-player>.icon-button:hover{background:var(--raised);color:var(--text)}
+@media(max-width:650px){.persistent-player{width:calc(100% - 20px);right:10px;bottom:82px}}
+@media(max-width:480px){
+  .preview-player{padding:12px;gap:10px}.preview-disc{width:46px;flex-basis:46px}
+  .persistent-player .preview-player{padding:13px 42px 13px 12px}
+  .preview-toggle{padding:0 10px;min-height:34px}
+}
