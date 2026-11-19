@@ -608,8 +608,8 @@ export default function Sleeve() {
           <span>Artist <small>Optional</small></span>
           <input value={selected.artist} maxLength={250} onChange={event => setSelected({ ...selected, artist: event.target.value })}/>
         </label>}
-        <RatingScale key={songKey(selected)} score={score} onChange={setScore} previous={findRating(selected)?.score === score ? findRating(selected)?.previousScore : findRating(selected)?.score}/>
-        <RatingDetails key={songKey(selected)} song={selected} tags={tags} setTags={setTags} context={context} setContext={setContext}/>
+        <RatingScale key={"scale:"+songKey(selected)} score={score} onChange={setScore} previous={findRating(selected)?.score === score ? findRating(selected)?.previousScore : findRating(selected)?.score}/>
+        <RatingDetails key={"details:"+songKey(selected)} song={selected} tags={tags} setTags={setTags} context={context} setContext={setContext}/>
         <label className="note-label" htmlFor="rating-note">Listening notes <span>Optional</span></label>
         <textarea id="rating-note" value={note} maxLength={1000} placeholder="What stood out to you?" onChange={event => setNote(event.target.value)}/>
         <div className="dialog-actions">
