@@ -369,3 +369,23 @@ dialog::backdrop{background:#050807c9;backdrop-filter:blur(12px);animation:sleev
 .rating-dialog .note-label{margin-top:16px}
 .rating-dialog textarea{min-height:70px}
 @media(max-width:650px){.new-scale{padding:14px 10px 10px}.scrub-row{grid-template-columns:32px minmax(0,1fr) 32px;gap:7px}.scrub-row>.icon-button{width:32px}.score-caption strong{font-size:11px;padding:5px 7px}.score-value input{font-size:48px}.vibe-tags button{font-size:12px;padding:7px 10px}}
+
+/* Apple Music sample player */
+.preview-player{display:flex;align-items:center;gap:14px;margin:0 0 18px;padding:14px;border:1px solid var(--line);border-radius:17px;background:color-mix(in srgb,var(--raised) 78%,transparent)}
+.preview-disc{width:64px;flex:0 0 64px;aspect-ratio:1;display:grid;place-items:center;border-radius:50%;background:repeating-radial-gradient(circle,#151815 0 2px,#393e39 3px 4px,#151815 5px 7px);border:1px solid #ffffff22;box-shadow:0 3px 10px #0005}
+.preview-disc .artwork{width:53%;border-radius:50%;box-shadow:0 0 0 1px #fff3}
+.preview-disc.playing{animation:vinyl-spin 4s linear infinite}
+.preview-main{flex:1;min-width:0;display:grid;gap:8px}
+.preview-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.preview-head>div{min-width:0;display:grid;gap:4px}
+.preview-head b{font-size:14px}
+.preview-main small{color:var(--muted);font-size:12px}
+.preview-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-weight:750;font-size:13px;border:0;border-radius:999px;padding:10px 14px;color:var(--accent-ink);background:var(--accent);white-space:nowrap}
+.preview-toggle:hover:not(:disabled){filter:brightness(1.1)}
+.preview-main select{width:100%;padding:7px 9px;font-size:12px}
+.preview-timeline{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.preview-timeline input{min-width:0;flex:1;accent-color:var(--accent);cursor:pointer;height:16px}
+.preview-credit{color:var(--muted);font-size:11px;width:fit-content}
+.preview-credit:hover{color:var(--text);text-decoration:underline}
+@media(max-width:480px){.preview-player{gap:10px;padding:10px}.preview-disc{width:48px;flex-basis:48px}.preview-head b{font-size:13px}.preview-toggle{padding:8px 10px}.preview-head small{font-size:11px}}
+@media(prefers-reduced-motion:reduce){.preview-disc.playing{animation:none}}

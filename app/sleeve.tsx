@@ -74,6 +74,50 @@ function RatingScale({ score, onChange, previous }: { score: number; onChange: (
       <button type="button" className="icon-button" aria-label="Increase rating by 0.1" onClick={() => onChange(clamp(score + .1))}><Plus size={18}/></button></div>
   </div>;
 }
+
+type PreviewTrack = { id: number; title: string; artist: string; src: string; url: string };
+function TrackPreview({song}:{song:Song}) {
+  const album=song.kind==='album';
+  const [tracks,setTracks]=useState<PreviewTrack[]>([]);
+  const [index,setIndex]=useState(0);
+  const [status,setStatus]=useState('loading');
+  const [playing,setPlaying]=useState(false);
+  const [seconds,setSeconds]=useState(0);
+  const [duration,setDuration]=useState(30);
+  const [error,setError]=useState('');
+  const audio=useRef<HTMLAudioElement>(null);
+  const track=tracks[index];
+  useEffect(()=>{
+    const controller=new AbortController();
+    setTracks([]);setIndex(0);setPlaying(false);setSeconds(0);setDuration(30);setError('');setStatus('loading');
+    const country=(song.url.match(/music\.apple\.com\/([a-z]{2})\//i)?.[1]||'us').toUpperCase();
+    const apple=typeof song.id==='number';
+    if(!apple&&(!song.artist.trim()||album)){setStatus('unavailable');return;}
+    const params=new URLSearchParams(apple?{id:String(song.id),country,...(album?{entity:'song'}:{})}:{term:song.title+' '+song.artist,media:'music',entity:'song',limit:'25',country});
+    const normalize=(s:string)=>s.normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
+    fetch('https://itunes.apple.com/'+(apple?'lookup':'search')+'?'+params,{signal:controller.signal}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(data=>{
+      if(controller.signal.aborted)return;
+      const found:PreviewTrack[]=(data.results||[]).filter((x:any)=>x.wrapperType==='track'&&x.kind==='song'&&typeof x.previewUrl==='string'&&/^https:\/\//.test(x.previewUrl)&&typeof x.trackViewUrl==='string'&&/^https:\/\/(music|itunes)\.apple\.com\//.test(x.trackViewUrl)&&(apple?(album?x.collectionId===song.id:x.trackId===song.id):normalize(x.trackName||'')===normalize(song.title)&&normalize(x.artistName||'')===normalize(song.artist))).map((x:any)=>({id:x.trackId,title:x.trackName,artist:x.artistName,src:x.previewUrl,url:x.trackViewUrl}));
+      const unique=[...new Map(found.map(x=>[x.id,x])).values()];
+      setTracks(album?unique:unique.slice(0,1));setStatus(unique.length?'ready':'unavailable');
+    }).catch(()=>{if(!controller.signal.aborted)setStatus('unavailable')});
+    return()=>controller.abort();
+  },[song.id,song.title,song.artist,song.url,album]);
+  useEffect(()=>{const el=audio.current;return()=>{el?.pause();};},[track?.src]);
+  function changeTrack(value:number){audio.current?.pause();setIndex(value);setPlaying(false);setSeconds(0);setDuration(30);setError('');}
+  async function toggle(){const el=audio.current;if(!el)return;if(!el.paused){el.pause();return;}try{setError('');if(el.ended)el.currentTime=0;await el.play()}catch{setError('Preview couldn’t play. Try again.');}}
+  return <section className="preview-player" aria-label="Apple Music preview">
+    <div className={'preview-disc'+(playing?' playing':'')} aria-hidden="true"><Artwork song={song}/></div>
+    <div className="preview-main"><div className="preview-head"><div><b>{album?'Preview album tracks':'Listen to a preview'}</b><small>{status==='loading'?'Finding preview…':status==='unavailable'?'No preview available for this release':'Apple Music · up to 30 seconds'}</small></div><button type="button" className="preview-toggle" aria-label={playing?'Pause preview':'Play preview'} disabled={!track} onClick={()=>void toggle()}>{playing?'Ⅱ':'▶'} <span>{playing?'Pause':'Preview'}</span></button></div>
+    {album&&tracks.length>1&&<select aria-label="Track to preview" value={index} onChange={e=>changeTrack(Number(e.target.value))}>{tracks.map((t,i)=><option key={t.id} value={i}>{t.title}</option>)}</select>}
+    {track&&<><audio key={track.id} ref={audio} src={track.src} preload="metadata" onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onEnded={()=>setPlaying(false)} onTimeUpdate={e=>setSeconds(e.currentTarget.currentTime)} onLoadedMetadata={e=>{if(Number.isFinite(e.currentTarget.duration))setDuration(e.currentTarget.duration)}} onError={()=>{setPlaying(false);setError('Preview unavailable. Try Apple Music.')}}/>
+      <div className="preview-timeline"><span>{formatDuration(seconds*1000)}</span><input type="range" min={0} max={duration} step={0.1} value={Math.min(seconds,duration)} aria-label="Seek preview" onChange={e=>{const value=Number(e.target.value);if(audio.current&&Number.isFinite(audio.current.duration)){audio.current.currentTime=value;setSeconds(value)}}}/><span>{formatDuration(duration*1000)}</span></div>
+      <a className="preview-credit" href={track.url} target="_blank" rel="noreferrer">Listen to the full track on Apple Music ↗</a></>}
+      {error&&<small role="status">{error}</small>}
+    </div>
+  </section>;
+}
+
 function RatingDetails({song,tags,setTags,context,setContext}:{song:Song;tags:string[];setTags:(v:string[])=>void;context:string;setContext:(v:string)=>void}) {
   const [tracks,setTracks]=useState<string[]>([]);
   const album=song.kind==='album';
@@ -608,6 +652,7 @@ export default function Sleeve() {
           <span>Artist <small>Optional</small></span>
           <input value={selected.artist} maxLength={250} onChange={event => setSelected({ ...selected, artist: event.target.value })}/>
         </label>}
+        <TrackPreview key={"preview:"+songKey(selected)} song={selected}/>
         <RatingScale key={"scale:"+songKey(selected)} score={score} onChange={setScore} previous={findRating(selected)?.score === score ? findRating(selected)?.previousScore : findRating(selected)?.score}/>
         <RatingDetails key={"details:"+songKey(selected)} song={selected} tags={tags} setTags={setTags} context={context} setContext={setContext}/>
         <label className="note-label" htmlFor="rating-note">Listening notes <span>Optional</span></label>
