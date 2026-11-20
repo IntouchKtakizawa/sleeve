@@ -515,3 +515,58 @@ dialog::backdrop{background:#050807c9;backdrop-filter:blur(12px);animation:sleev
 .vinyl-controls button:hover,.vinyl-controls button[aria-pressed=true]{color:#eaffc5;background:#253927}
 @media(max-width:650px){.hero .vinyl-carousel{width:calc(100% - 28px);margin:8px 0 20px}.vinyl-stage{height:clamp(184px,55vw,260px)}.vinyl-slot{width:clamp(130px,49vw,230px)}}
 @media(prefers-reduced-motion:reduce){.vinyl-slot,.vinyl-slot .record-disc{transition:none!important;animation:none!important}}
+
+
+/* Photorealistic pressed vinyl — fixed lighting, fine grooves and physical depth. */
+.editorial-hero::before {
+  opacity:1;
+  mask-image:none;
+  background:
+    radial-gradient(ellipse at 80% 24%,#fff8 0%,transparent 54%),
+    radial-gradient(ellipse at 88% 88%,#344a2d28,transparent 58%),
+    repeating-linear-gradient(117deg,#ffffff09 0 .5px,transparent .5px 3px);
+}
+.vinyl-stage { perspective:1050px; }
+.vinyl-slot {
+  transform-origin:center;
+  transition:transform .95s cubic-bezier(.2,.78,.25,1),opacity .55s ease;
+  filter:drop-shadow(0 9px 10px #19231b55);
+}
+.vinyl-slot[data-position="0"]{--z:60px}
+.vinyl-slot[data-position="-1"]{--x:-62%;--y:3%;--z:-45px;--tilt:34deg;--scale:.77;--opacity:1}
+.vinyl-slot[data-position="1"]{--x:62%;--y:3%;--z:-45px;--tilt:-34deg;--scale:.77;--opacity:1}
+.vinyl-slot[data-position="-2"]{--x:-83%;--y:-19%;--z:-150px;--tilt:48deg;--scale:.55;--opacity:.76}
+.vinyl-slot[data-position="2"]{--x:83%;--y:-19%;--z:-150px;--tilt:-48deg;--scale:.55;--opacity:.76}
+.vinyl-slot .record-disc{
+  border:1px solid #555750;
+  background:
+    radial-gradient(circle,transparent 0 19%,#151613 19.2% 23%,#30312c 23.3%,transparent 23.7%),
+    radial-gradient(circle,transparent 0 43%,#05060680 43.1% 43.6%,transparent 44% 48%,#080909 48.2% 49.2%,#4d5045 49.3% 49.6%,#111210 49.9%),
+    repeating-radial-gradient(circle,#0d0e0d 0 .55px,#292b28 .75px,#161714 1.1px,#10110f 1.65px);
+  box-shadow:inset 0 0 0 2px #141510,inset 0 0 12px #0009,0 2px 0 #090a08,0 4px 0 #20221d,0 6px 1px #080a08,0 14px 26px #0005;
+}
+.vinyl-slot .record-disc::before {
+  inset:1.5%;border:1px solid #b2b4a129;
+  box-shadow:0 0 0 1px #090a09,inset 0 0 0 1px #080908;
+  background:radial-gradient(circle,transparent 0 34%,#0002 34.2% 34.7%,transparent 35% 58%,#0004 58.3% 59%,transparent 59.5%);
+}
+.vinyl-slot .record-disc .artwork{
+  width:35%;aspect-ratio:1;object-fit:cover;border-radius:50%;
+  border:1px solid #090a08;box-shadow:0 0 0 1px #55574a,inset 0 0 8px #0004;
+}
+.vinyl-slot .record-disc::after {
+  width:2.45%;background:radial-gradient(circle,#030403 0 43%,#171a15 54%,#626557 81%,#20221e 100%);
+  box-shadow:0 .5px 1px #fff5,0 0 0 .5px #090a08;
+}
+.vinyl-slot::after{
+  content:"";position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  background:conic-gradient(from 22deg,transparent 0%,#e4efe119 9%,#d3e4cf44 14%,transparent 24%,transparent 49%,#c5d4bf2e 56%,#eaf0de55 63%,transparent 74%,transparent 100%);
+  mask-image:radial-gradient(circle,transparent 0 18%,#000 18.6% 69%,transparent 71%);
+  mix-blend-mode:screen;
+}
+.vinyl-slot:hover .record-disc{box-shadow:inset 0 0 0 2px #141510,inset 0 0 12px #0009,0 2px 0 #090a08,0 4px 0 #20221d,0 6px 1px #080a08,0 14px 26px #0005}
+@media(max-width:650px){
+  .vinyl-slot[data-position="-2"]{--x:-74%}
+  .vinyl-slot[data-position="2"]{--x:74%}
+}
+@media(prefers-reduced-motion:reduce){.vinyl-slot{transition:none!important}}
