@@ -45,21 +45,19 @@ function VinylCarousel({ openRating, findRating, setScore }: {
 }) {
   const tracks = discoveryTracks;
   const [index, setIndex] = useState(() => Math.floor(Date.now()/86400000) % tracks.length);
-  const [hover, setHover] = useState(false);
   const [focused, setFocused] = useState(false);
   const [paused, setPaused] = useState(false);
   const wrap = (n: number) => (n % tracks.length + tracks.length) % tracks.length;
   const move = (delta: number) => setIndex(n => wrap(n + delta));
   useEffect(() => {
-    if (hover || focused || paused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (focused || paused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const timer = window.setInterval(() => setIndex(n => (n + 1) % tracks.length), 4800);
     return () => window.clearInterval(timer);
-  }, [hover, focused, paused, tracks.length]);
+  }, [focused, paused, tracks.length]);
   const song = tracks[index];
   if (!song) return null;
   return <article className="hero-record vinyl-carousel" aria-label="Featured record carousel"
-    data-paused={hover || focused || paused}
-    onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+    data-paused={paused}
     onFocus={e => { if (e.target.matches(':focus-visible')) setFocused(true); }}
     onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}>
     <div className="vinyl-stage">
@@ -67,6 +65,18 @@ function VinylCarousel({ openRating, findRating, setScore }: {
         const slot = wrap(index + offset), record = tracks[slot];
         return <button key={slot} type="button" className="vinyl-slot" data-position={offset}
           aria-label={offset === 0 ? 'Rate ' + record.title : 'Select ' + record.title}
+          onPointerMove={e => {
+            if (e.pointerType !== 'mouse') return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = Math.max(-1, Math.min(1, 2 * (e.clientX - rect.left) / rect.width - 1));
+            const y = Math.max(-1, Math.min(1, 2 * (e.clientY - rect.top) / rect.height - 1));
+            e.currentTarget.style.setProperty('--pointer-x', (x * 9).toFixed(2) + 'deg');
+            e.currentTarget.style.setProperty('--pointer-y', (-y * 9).toFixed(2) + 'deg');
+            e.currentTarget.style.setProperty('--light-angle', (x * 24 + y * 12).toFixed(2) + 'deg');
+          }}
+          onPointerLeave={e => {
+            for (const property of ['--pointer-x', '--pointer-y', '--light-angle']) e.currentTarget.style.removeProperty(property);
+          }}
           onClick={() => offset === 0 ? openRating(record) : move(offset)}>
           <span className="record-disc"><Artwork song={record} eager /></span>
         </button>;
