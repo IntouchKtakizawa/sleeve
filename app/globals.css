@@ -570,3 +570,35 @@ dialog::backdrop{background:#050807c9;backdrop-filter:blur(12px);animation:sleev
   .vinyl-slot[data-position="2"]{--x:74%}
 }
 @media(prefers-reduced-motion:reduce){.vinyl-slot{transition:none!important}}
+
+
+/* Interactive vinyl: outer geometry moves independently of the spinning pressing. */
+.vinyl-carousel[data-paused="false"] .record-disc,
+.vinyl-carousel[data-paused="false"]:hover .record-disc{animation-play-state:running}
+.vinyl-carousel[data-paused="true"] .record-disc{animation-play-state:paused}
+.vinyl-slot{
+  --pointer-x:0deg;--pointer-y:0deg;--light-angle:0deg;
+  --lift:0px;--outward:0%;--hover-scale:1;
+  transform:translate(-50%,-50%)
+    translate3d(calc(var(--x) + var(--outward)),var(--y),calc(var(--z) + var(--lift)))
+    rotateY(calc(var(--tilt) + var(--pointer-x))) rotateX(var(--pointer-y))
+    scale(calc(var(--scale) * var(--hover-scale)));
+}
+.vinyl-slot::after{
+  background:conic-gradient(from calc(22deg + var(--light-angle)),transparent 0%,#e4efe119 9%,#d3e4cf55 14%,transparent 24%,transparent 49%,#c5d4bf2e 56%,#eaf0de55 63%,transparent 74%,transparent 100%);
+  opacity:.65;transition:opacity .35s ease;
+  mask-image:radial-gradient(circle,transparent 0 24%,#000 24.5% 69%,transparent 71%);
+}
+@media(hover:hover) and (pointer:fine){
+  .vinyl-slot:hover{
+    --lift:36px;--hover-scale:1.035;
+    transition:transform .28s cubic-bezier(.18,.75,.25,1),opacity .4s ease,filter .3s ease;
+    filter:drop-shadow(0 17px 15px #15201566);
+  }
+  .vinyl-slot[data-position="-1"]:hover,.vinyl-slot[data-position="-2"]:hover{--outward:-6%}
+  .vinyl-slot[data-position="1"]:hover,.vinyl-slot[data-position="2"]:hover{--outward:6%}
+  .vinyl-slot:hover::after{opacity:1}
+}
+@media(prefers-reduced-motion:reduce){
+  .vinyl-slot,.vinyl-slot:hover{--pointer-x:0deg!important;--pointer-y:0deg!important;--lift:0px;--outward:0%;--hover-scale:1;transition:none!important}
+}
