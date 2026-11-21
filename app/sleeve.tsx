@@ -5,6 +5,8 @@ import { ArrowRight, ArrowUpRight, Check, Disc3, Download, Heart, Library, Minus
   Shuffle, Star, Sun, Trash2, Upload, X } from 'lucide-react';
 import { albumFor, chartAlbums, discoveryPool, discoveryTracks, drawDiscovery, genres, loadSpotifyLink, searchApple, spotifySearch, type Kind, type Song } from '../lib/catalogue';
 import { DiscoverySource } from '../lib/discovery-source';
+import { RecordRotation } from './record-rotation/RecordRotation';
+import { useCoverTint } from './use-cover-tint';
 import { backup, csv, mergeRatings, parseBackup, songKey, STORAGE_KEY, type Rating } from '../lib/local-library';
 
 const themeKey = 'sleeve.theme';
@@ -40,62 +42,6 @@ function Artwork({ song, eager = false }: { song: Song; eager?: boolean }) {
 }
 
 
-function VinylCarousel({ openRating, findRating, setScore }: {
-  openRating: (song: Song) => void; findRating: (song: Song) => Rating | undefined; setScore: (score: number) => void;
-}) {
-  const tracks = discoveryTracks;
-  const [index, setIndex] = useState(() => Math.floor(Date.now()/86400000) % tracks.length);
-  const [focused, setFocused] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const wrap = (n: number) => (n % tracks.length + tracks.length) % tracks.length;
-  const move = (delta: number) => setIndex(n => wrap(n + delta));
-  useEffect(() => {
-    if (focused || paused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const timer = window.setInterval(() => setIndex(n => (n + 1) % tracks.length), 4800);
-    return () => window.clearInterval(timer);
-  }, [focused, paused, tracks.length]);
-  const song = tracks[index];
-  if (!song) return null;
-  return <article className="hero-record vinyl-carousel" aria-label="Featured record carousel"
-    data-paused={paused}
-    onFocus={e => { if (e.target.matches(':focus-visible')) setFocused(true); }}
-    onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}>
-    <div className="vinyl-stage">
-      {[-2,-1,0,1,2].map(offset => {
-        const slot = wrap(index + offset), record = tracks[slot];
-        return <button key={slot} type="button" className="vinyl-slot" data-position={offset}
-          aria-label={offset === 0 ? 'Rate ' + record.title : 'Select ' + record.title}
-          onPointerMove={e => {
-            if (e.pointerType !== 'mouse') return;
-            const rect = e.currentTarget.getBoundingClientRect();
-            const x = Math.max(-1, Math.min(1, 2 * (e.clientX - rect.left) / rect.width - 1));
-            const y = Math.max(-1, Math.min(1, 2 * (e.clientY - rect.top) / rect.height - 1));
-            e.currentTarget.style.setProperty('--pointer-x', (x * 9).toFixed(2) + 'deg');
-            e.currentTarget.style.setProperty('--pointer-y', (-y * 9).toFixed(2) + 'deg');
-            e.currentTarget.style.setProperty('--light-angle', (x * 24 + y * 12).toFixed(2) + 'deg');
-          }}
-          onPointerLeave={e => {
-            for (const property of ['--pointer-x', '--pointer-y', '--light-angle']) e.currentTarget.style.removeProperty(property);
-          }}
-          onClick={() => offset === 0 ? openRating(record) : move(offset)}>
-          <span className="record-disc"><Artwork song={record} eager /></span>
-        </button>;
-      })}
-    </div>
-    <div className="vinyl-controls">
-      <button type="button" aria-label="Previous record" onClick={() => move(-1)}>‹</button>
-      <button type="button" aria-label={paused ? 'Resume carousel' : 'Pause carousel'} aria-pressed={paused} onClick={() => setPaused(p => !p)}>{paused ? '▶' : 'Ⅱ'}</button>
-      <span>RECORD ROTATION</span>
-      <button type="button" aria-label="Next record" onClick={() => move(1)}>›</button>
-    </div>
-    <div className="record-info">
-      <button className="record-label" onClick={() => openRating(song)}><span><b>{song.title}</b><small>{song.artist}</small></span><ArrowUpRight size={20}/></button>
-      <div className="quick-score" role="group" aria-label="Quick rating">
-        {[2,4,6,8,10].map(value => <button key={value} type="button" aria-label={`Rate ${song.title} ${value} out of 10`} onClick={() => {openRating(song);setScore(value);}}><Star size={18} fill={(findRating(song)?.score ?? 0) >= value ? 'currentColor' : 'none'}/></button>)}
-      </div>
-    </div>
-  </article>;
-}
 
 function KindSwitch({ value, onChange, includeAll = false }: {
   value: Filter; onChange: (kind: Filter) => void; includeAll?: boolean;
@@ -193,11 +139,6 @@ function RatingDetails({song,tags,setTags,context,setContext}:{song:Song;tags:st
   return <div className="rating-extras"><div className="extra-heading">What stood out? <small>Optional</small></div><div className="vibe-tags">{vibeOptions.map(tag=><button key={tag} type="button" aria-pressed={tags.includes(tag)} onClick={()=>setTags(tags.includes(tag)?tags.filter(x=>x!==tag):[...tags,tag])}>{tags.includes(tag)?'✓ ':''}{tag}</button>)}</div>
     <label className="context-field"><span>{album?'Favourite track':'Peak moment'} <small>Optional</small></span><input value={context} onChange={e=>setContext(e.target.value)} maxLength={120} placeholder={album?'Choose or type a track':'e.g. 2:34 — guitar solo'} list={album?'album-track-options':undefined}/></label>
     {album&&<datalist id="album-track-options">{tracks.map(t=><option key={t} value={t}/>)}</datalist>}</div>;
-}
-function useCoverTint(art?: string) {
-  const [tint,setTint]=useState('110,125,115');
-  useEffect(()=>{let active=true;setTint('110,125,115');if(!art)return;
-    const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{if(!active)return;try{const canvas=document.createElement('canvas');canvas.width=canvas.height=24;const ctx=canvas.getContext('2d');if(!ctx)return;ctx.drawImage(img,0,0,24,24);const pixels=ctx.getImageData(0,0,24,24).data;let r=0,g=0,b=0,w=0;for(let i=0;i<pixels.length;i+=4){const max=Math.max(pixels[i],pixels[i+1],pixels[i+2]),min=Math.min(pixels[i],pixels[i+1],pixels[i+2]);const weight=(max-min+15)*(max>30&&max<245?1:.15);r+=pixels[i]*weight;g+=pixels[i+1]*weight;b+=pixels[i+2]*weight;w+=weight;}if(w)setTint([r,g,b].map(v=>Math.round(v/w)).join(','));}catch{}};img.src=art;return()=>{active=false;};},[art]);return tint;
 }
 function sleeveEntry(dialog: HTMLDialogElement | null) {
   if (!dialog || dialog.open || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -563,14 +504,17 @@ export default function Sleeve() {
     <main>
       {storageError && <p className="status" role="alert">{storageError}</p>}
       {(view === 'discover'||view==='home'||view==='search') && <>
-        {view==='home' && <section className="hero editorial-hero">
+        {view === 'home' && <RecordRotation tracks={discoveryTracks} findRating={findRating}
+          dialogOpen={Boolean(selected)} onRate={(song, initialScore) => {
+            openRating(song);
+            if (initialScore !== undefined) setScore(initialScore);
+          }}>
           <div className="hero-copy">
             <small className="eyebrow">THE DAILY RECORD · YOUR MUSIC JOURNAL</small><h1>Music worth<br/>remembering.</h1>
             <p>Discover the unexpected. Make up your own mind. Keep your listening history on record.</p>
             <button className="primary" onClick={() => navigate('discover')}>Explore music</button>
           </div>
-          <VinylCarousel openRating={openRating} findRating={findRating} setScore={setScore}/>
-        </section>}
+        </RecordRotation>}
 
         {view==='discover'&&<><div className="page-heading"><div><p className="eyebrow">THE LISTENING ROOM</p><h1>Find your next favourite.</h1></div><button className="primary" onClick={()=>{navigate('random');if(!history.length)void roll()}}><Shuffle size={18}/> Random song</button></div><div className="editorial-categories">{discoverySections.map(([title,caption,g])=><button key={title} onClick={()=>{setGenre(g);setSearch({term:'',revision:0});setQuery('');document.getElementById('discovery-results')?.scrollIntoView({behavior:'smooth'})}}><small>{caption}</small><strong>{title}</strong></button>)}</div></>}
         {view==='search'&&<section className="find-section" aria-label="Find music">
