@@ -43,3 +43,8 @@ yarn-error.log*
 
 # OS metadata
 .DS_Store
+
+# iOS build output
+ios-dist/
+ios/App/App/public/
+ios/App/build/

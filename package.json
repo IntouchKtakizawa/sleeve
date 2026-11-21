@@ -13,10 +13,21 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "build:pages": "vite build --config vite.pages.config.ts",
-    "test": "node --test lib/local-library.test.mjs app/record-rotation/motor.test.mjs"
+    "test": "node --test lib/local-library.test.mjs app/record-rotation/motor.test.mjs",
+    "build:ios": "vite build --config vite.ios.config.ts && cap sync ios",
+    "ios:open": "cap open ios"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.6.2",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/share": "^8.0.3",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4",
     "@hookform/resolvers": "^5.7.1",
     "@shadcn/react": "^0.3.0",
     "class-variance-authority": "0.7.1",
@@ -42,6 +53,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
     "@tailwindcss/postcss": "4.2.1",
