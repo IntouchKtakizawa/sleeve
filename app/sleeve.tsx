@@ -7,6 +7,7 @@ import { albumFor, chartAlbums, discoveryPool, discoveryTracks, drawDiscovery, g
 import { DiscoverySource } from '../lib/discovery-source';
 import { RecordRotation } from './record-rotation/RecordRotation';
 import { useCoverTint } from './use-cover-tint';
+import { haptic, isNative, setNativeTheme, shareFile } from '../lib/native';
 import { backup, csv, mergeRatings, parseBackup, songKey, STORAGE_KEY, type Rating } from '../lib/local-library';
 
 const themeKey = 'sleeve.theme';
@@ -107,7 +108,7 @@ function TrackPreview({song}:{song:Song}) {
     const normalize=(s:string)=>s.normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
     fetch('https://itunes.apple.com/'+(apple?'lookup':'search')+'?'+params,{signal:controller.signal}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(data=>{
       if(controller.signal.aborted)return;
-      const found:PreviewTrack[]=(data.results||[]).filter((x:any)=>x.wrapperType==='track'&&x.kind==='song'&&typeof x.previewUrl==='string'&&/^https:\/\//.test(x.previewUrl)&&typeof x.trackViewUrl==='string'&&/^https:\/\/(music|itunes)\.apple\.com\//.test(x.trackViewUrl)&&(apple?(album?x.collectionId===song.id:x.trackId===song.id):normalize(x.trackName||'')===normalize(song.title)&&normalize(x.artistName||'')===normalize(song.artist))).map((x:any)=>({id:x.trackId,title:x.trackName,artist:x.artistName,src:x.previewUrl,url:x.trackViewUrl}));
+      const found:PreviewTrack[]=((data as {results?:any[]}).results||[]).filter((x:any)=>x.wrapperType==='track'&&x.kind==='song'&&typeof x.previewUrl==='string'&&/^https:\/\//.test(x.previewUrl)&&typeof x.trackViewUrl==='string'&&/^https:\/\/(music|itunes)\.apple\.com\//.test(x.trackViewUrl)&&(apple?(album?x.collectionId===song.id:x.trackId===song.id):normalize(x.trackName||'')===normalize(song.title)&&normalize(x.artistName||'')===normalize(song.artist))).map((x:any)=>({id:x.trackId,title:x.trackName,artist:x.artistName,src:x.previewUrl,url:x.trackViewUrl}));
       const unique=[...new Map(found.map(x=>[x.id,x])).values()];
       setTracks(album?unique:unique.slice(0,1));setStatus(unique.length?'ready':'unavailable');
     }).catch(()=>{if(!controller.signal.aborted)setStatus('unavailable')});
@@ -134,7 +135,7 @@ function RatingDetails({song,tags,setTags,context,setContext}:{song:Song;tags:st
   const album=song.kind==='album';
   useEffect(()=>{setTracks([]); if(!album||song.source==='spotify'||typeof song.id!=='number')return;
     const controller=new AbortController();fetch('https://itunes.apple.com/lookup?id='+song.id+'&entity=song',{signal:controller.signal})
-      .then(r=>r.ok?r.json():null).then(data=>{if(!controller.signal.aborted&&data)setTracks([...new Set<string>((data.results||[]).filter((x:{wrapperType:string;trackName?:string})=>x.wrapperType==='track'&&x.trackName).map((x:{trackName:string})=>x.trackName))]);}).catch(()=>{});
+      .then(r=>r.ok?r.json():null).then(data=>{if(!controller.signal.aborted&&data)setTracks([...new Set<string>(((data as {results?:any[]}).results||[]).filter((x:{wrapperType:string;trackName?:string})=>x.wrapperType==='track'&&x.trackName).map((x:{trackName:string})=>x.trackName))]);}).catch(()=>{});
     return ()=>controller.abort();},[song.id,album,song.source]);
   return <div className="rating-extras"><div className="extra-heading">What stood out? <small>Optional</small></div><div className="vibe-tags">{vibeOptions.map(tag=><button key={tag} type="button" aria-pressed={tags.includes(tag)} onClick={()=>setTags(tags.includes(tag)?tags.filter(x=>x!==tag):[...tags,tag])}>{tags.includes(tag)?'✓ ':''}{tag}</button>)}</div>
     <label className="context-field"><span>{album?'Favourite track':'Peak moment'} <small>Optional</small></span><input value={context} onChange={e=>setContext(e.target.value)} maxLength={120} placeholder={album?'Choose or type a track':'e.g. 2:34 — guitar solo'} list={album?'album-track-options':undefined}/></label>
@@ -292,6 +293,7 @@ export default function Sleeve() {
     if (!ready) return;
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
     try { localStorage.setItem(themeKey, dark ? 'dark' : 'light'); } catch {}
+    setNativeTheme(dark);
   }, [dark, ready]);
 
   useEffect(() => {
@@ -422,6 +424,7 @@ export default function Sleeve() {
     if (!selected || !ready) return;
     const rating: Rating = { trackId: selected.id, song: selected, score, note, favourite, tags, context, previousScore: findRating(selected)?.score !== score ? findRating(selected)?.score : findRating(selected)?.previousScore, updatedAt: new Date().toISOString() };
     if (updateCollection(previous => mergeRatings(previous, [rating]))) {
+      haptic('success');
       setSelected(null);
       setUndo(null);
       setToast('Saved to your collection.');
@@ -431,6 +434,7 @@ export default function Sleeve() {
   function removeRating(song: Song) {
     const removed = findRating(song);
     if (removed && updateCollection(previous => previous.filter(rating => songKey(rating.song) !== songKey(song)))) {
+      haptic('warning');
       setUndo(removed);
       setSelected(null);
       setToast('Rating removed.');
@@ -439,9 +443,11 @@ export default function Sleeve() {
 
   function download(format: 'json' | 'csv') {
     const data = format === 'json' ? JSON.stringify({...JSON.parse(backup(ratings)),shelves},null,2) : csv(ratings);
+    const filename = 'sleeve-' + new Date().toISOString().slice(0, 10) + '.' + format;
+    if (isNative) { shareFile(filename, data).catch(() => setToast('Could not export the file.')); return; }
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([data], { type: format === 'json' ? 'application/json' : 'text/csv;charset=utf-8' }));
-    link.download = 'sleeve-' + new Date().toISOString().slice(0, 10) + '.' + format;
+    link.download = filename;
     link.click();
     const url = link.href;
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
