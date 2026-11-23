@@ -13,7 +13,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "build:pages": "vite build --config vite.pages.config.ts",
-    "test": "node --test lib/local-library.test.mjs app/record-rotation/motor.test.mjs",
+    "test": "node --test lib/local-library.test.mjs lib/listening.test.mjs app/record-rotation/motor.test.mjs",
     "build:ios": "vite build --config vite.ios.config.ts && cap sync ios",
     "ios:open": "cap open ios"
   },

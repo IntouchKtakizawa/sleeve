@@ -83,10 +83,30 @@ export async function shareFile(filename: string, data: string) {
   }
 }
 
+// Share an image (e.g. a recap card) through the iOS share sheet.
+export async function shareImage(filename: string, blob: Blob) {
+  const [{ Filesystem, Directory }, { Share }] = await Promise.all([
+    import('@capacitor/filesystem'),
+    import('@capacitor/share'),
+  ]);
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+  const { uri } = await Filesystem.writeFile({ path: filename, data, directory: Directory.Cache });
+  try {
+    await Share.share({ title: filename, files: [uri] });
+  } catch (error) {
+    if (!/cancel/i.test(String((error as Error)?.message ?? error))) throw error;
+  }
+}
+
 // The music APIs (iTunes Search, Apple RSS, Spotify oEmbed) don't send CORS
 // headers for the app's capacitor:// origin, so in the app these requests go
 // through iOS's native networking instead of the web view.
-const NATIVE_HOSTS = /^https:\/\/(itunes\.apple\.com|rss\.marketingtools\.apple\.com|open\.spotify\.com)\//;
+const NATIVE_HOSTS = /^https:\/\/(itunes\.apple\.com|rss\.marketingtools\.apple\.com|open\.spotify\.com|ws\.audioscrobbler\.com)\//;
 function installNativeFetch() {
   const webFetch = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {

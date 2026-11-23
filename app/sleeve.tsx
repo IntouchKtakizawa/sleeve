@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import { ArrowRight, ArrowUpRight, Check, Disc3, Download, Heart, Library, Minus, Moon, Plus, Search,
+import { ArrowRight, ArrowUpRight, Check, Disc3, Download, Flame, Headphones, Heart, Library, Minus, Moon, Plus, Search,
   Shuffle, Star, Sun, Trash2, Upload, X } from 'lucide-react';
+import { ListeningRoom } from './listening-room';
+import { CompareView, RecapPanel, ShareTaste } from './taste-share';
+import { inPeriod, ratingStreak, tasteLabel } from '../lib/taste';
 import { albumFor, chartAlbums, discoveryPool, discoveryTracks, drawDiscovery, genres, loadSpotifyLink, searchApple, spotifySearch, type Kind, type Song } from '../lib/catalogue';
 import { DiscoverySource } from '../lib/discovery-source';
 import { RecordRotation } from './record-rotation/RecordRotation';
@@ -11,7 +14,7 @@ import { haptic, isNative, setNativeTheme, shareFile } from '../lib/native';
 import { backup, csv, mergeRatings, parseBackup, songKey, STORAGE_KEY, type Rating } from '../lib/local-library';
 
 const themeKey = 'sleeve.theme';
-const views = ['home', 'discover', 'search', 'random', 'collection', 'insights'] as const;
+const views = ['home', 'discover', 'search', 'random', 'listening', 'collection', 'insights', 'compare'] as const;
 type View = typeof views[number];
 type Filter = 'all' | Kind;
 type DiscoveryRound = ReturnType<typeof drawDiscovery> & { pending?: boolean; unavailable?: boolean };
@@ -206,6 +209,7 @@ function useDiscovery(source: DiscoverySource, kind: Kind, group: string, count:
 
 export default function Sleeve() {
   const [view, setView] = useState<View>('home');
+  const [compareCode, setCompareCode] = useState('');
   const [history,setHistory]=useState<Song[]>([]);
   const randomBusy=useRef(false);
   const [historyIndex,setHistoryIndex]=useState(-1);
@@ -267,8 +271,9 @@ export default function Sleeve() {
       if (event.key === STORAGE_KEY || event.key === null) sync();
     }
     function onHash() {
-      const hash = window.location.hash.slice(1) as View;
-      setView(views.includes(hash) ? hash : 'home');
+      const hash = window.location.hash.slice(1);
+      if (hash.startsWith('compare=')) { setCompareCode(hash.slice(8)); setView('compare'); return; }
+      setView(views.includes(hash as View) && hash !== 'compare' ? hash as View : 'home');
     }
     sync();
     const savedHistory=stored<Song[]>('sleeve.history.v1',[]);setHistory(savedHistory);if(savedHistory.length)setHistoryIndex(0);
@@ -499,6 +504,7 @@ export default function Sleeve() {
         <button aria-current={view==='home'?'page':undefined} onClick={()=>navigate('home')}><Disc3 size={17}/><span>Home</span></button>
         <button aria-current={view === 'discover'||view==='random' ? 'page' : undefined} onClick={() => navigate('discover')}><Shuffle size={17}/> <span>Discover</span></button>
         <button aria-current={view==='search'?'page':undefined} onClick={()=>navigate('search')}><Search size={17}/><span>Search</span></button>
+        <button aria-current={view==='listening'?'page':undefined} onClick={()=>navigate('listening')}><Headphones size={17}/><span>Listening</span></button>
         <button aria-current={view === 'collection' ? 'page' : undefined} onClick={() => navigate('collection')}><Library size={17}/> <span>Collection</span></button>
         <button aria-current={view==='insights'?'page':undefined} onClick={()=>navigate('insights')}><Star size={17}/><span>Insights</span></button>
       </nav>
@@ -518,7 +524,8 @@ export default function Sleeve() {
           <div className="hero-copy">
             <small className="eyebrow">THE DAILY RECORD · YOUR MUSIC JOURNAL</small><h1>Music worth<br/>remembering.</h1>
             <p>Discover the unexpected. Make up your own mind. Keep your listening history on record.</p>
-            <button className="primary" onClick={() => navigate('discover')}>Explore music</button>
+            <div className="hero-actions"><button className="primary" onClick={() => navigate('discover')}>Explore music</button>
+              <button className="secondary" onClick={() => navigate('listening')}><Headphones size={17}/> Rate what you played</button></div>
           </div>
         </RecordRotation>}
 
@@ -666,7 +673,13 @@ export default function Sleeve() {
         {collection.length>limit&&<button className="secondary" onClick={()=>setLimit(limit+60)}>Load more records</button>}
         <p className="collection-footer">Your history stays on this device. Clearing browser data can remove your ratings and shelves. Export a backup regularly.</p>
       </section>}
-      {view==='insights'&&<section className="insights-page"><p className="eyebrow">YOUR LISTENING PROFILE</p><h1>On the record.</h1><div className="collection-stats"><div><b>{ratings.length}</b><span>Records rated</span></div><div><b>{ratings.length?(ratings.reduce((s,r)=>s+r.score,0)/ratings.length).toFixed(1):'—'}</b><span>Average score</span></div><div><b>{genreStats.length}</b><span>Genres explored</span></div></div><h2>Your highest-rated genres</h2>{genreStats.length?genreStats.slice(0,12).map(g=><div className="insight-bar" key={g.name}><span>{g.name}<small>{g.count} rated</small></span><div><i style={{width:g.avg*10+'%'}}/></div><b>{g.avg.toFixed(1)}</b></div>):<p className="status">Rate a few songs to start seeing your musical taste.</p>}<h2>Highest rated records</h2><div className="shelf-grid">{[...ratings].sort((a,b)=>b.score-a.score).slice(0,8).map(r=><button className="shelf-card" key={songKey(r.song)} onClick={()=>openRating(r.song)}><Artwork song={r.song}/><b>{r.song.title}</b><small>{r.song.artist} · {r.score.toFixed(1)}</small></button>)}</div></section>}
+      {view==='listening'&&<ListeningRoom ratings={ratings} onRate={openRating} toast={setToast}
+        onSearch={term=>{navigate('search');setQuery(term);setSearch(p=>({term,revision:p.revision+1}))}}/>}
+      {view==='compare'&&compareCode&&<CompareView key={compareCode} code={compareCode} ratings={ratings} onRate={openRating} toast={setToast} onDone={()=>navigate('insights')}/>}
+      {view==='insights'&&<section className="insights-page"><p className="eyebrow">YOUR LISTENING PROFILE</p><h1>On the record.</h1>
+        <p className="taste-badge"><span><Star size={15}/> {tasteLabel(ratings)}</span>{ratingStreak(ratings)>0&&<span className="streak"><Flame size={15}/> {ratingStreak(ratings)}-day rating streak</span>}<span>{inPeriod(ratings,'month').length} rated this month</span></p>
+        <div className="collection-stats"><div><b>{ratings.length}</b><span>Records rated</span></div><div><b>{ratings.length?(ratings.reduce((s,r)=>s+r.score,0)/ratings.length).toFixed(1):'—'}</b><span>Average score</span></div><div><b>{genreStats.length}</b><span>Genres explored</span></div></div>
+        <div className="share-grid"><RecapPanel ratings={ratings} dark={dark} toast={setToast}/><ShareTaste ratings={ratings} toast={setToast}/></div><h2>Your highest-rated genres</h2>{genreStats.length?genreStats.slice(0,12).map(g=><div className="insight-bar" key={g.name}><span>{g.name}<small>{g.count} rated</small></span><div><i style={{width:g.avg*10+'%'}}/></div><b>{g.avg.toFixed(1)}</b></div>):<p className="status">Rate a few songs to start seeing your musical taste.</p>}<h2>Highest rated records</h2><div className="shelf-grid">{[...ratings].sort((a,b)=>b.score-a.score).slice(0,8).map(r=><button className="shelf-card" key={songKey(r.song)} onClick={()=>openRating(r.song)}><Artwork song={r.song}/><b>{r.song.title}</b><small>{r.song.artist} · {r.score.toFixed(1)}</small></button>)}</div></section>}
     </main>
 
     <dialog ref={dialogRef} aria-labelledby="rating-title" onCancel={() => setSelected(null)}
