@@ -17,6 +17,11 @@ Website: https://intouchktakizawa.github.io/sleeve/
 - JSON backup export and validated merge import
 - CSV export with spreadsheet formula protection
 - Edit ratings and undo removal
+- **Listening:** connect Last.fm (works with Spotify and Apple Music scrobbling) or import Spotify's StreamingHistory export, then rate what you actually played in one tap
+- **Recap cards:** a Stories-sized image of your month, year or all-time top-rated records, average score, rating streak and taste label
+- **Taste match:** share a link that carries your top 40 records (never your notes). Friends see a match score, records you both rated, and picks to try
+
+Set `VITE_LASTFM_API_KEY` at build time to ship a Last.fm API key so people only need their username. Without it, the app asks each person for their own free key.
 
 No login, account or external database is used by the GitHub Pages app. Ratings, notes, favourites and theme preferences stay in the current browser on this origin. Online search and artwork require an internet connection to the relevant music service. The random generator shuffles a curated mix without repeating tracks until the current genre pool runs out. Clearing site data, using private browsing or switching browsers can remove or separate local collections. Export a JSON backup to move or restore your ratings.
 
